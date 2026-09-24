@@ -2,7 +2,7 @@
 :root{
   --paper:#15375c; --paper-deep:#102d4c; --chalk:#eaf3ff; --muted:#9db8d6;
   --line:rgba(234,243,255,.28); --ok:#67d68b; --bad:#ff8a70; --ink:#14283b;
-  --house:#f6b98a; --monastery:#c9b8f5; --field:#b7e27c; --water:#6fc6f7;
+  --hut:#f6b98a; --monastery:#c9b8f5; --grain:#b7e27c; --water:#6fc6f7;
 }
 *{box-sizing:border-box}
 html{background:var(--paper-deep)}
@@ -51,12 +51,12 @@ main > section{
   transition:background .12s;
 }
 .cell:hover{background:rgba(234,243,255,.18)}
-.cell.house,.cell.monastery,.cell.field,.cell.water{
+.cell.hut,.cell.monastery,.cell.grain,.cell.water{
   box-shadow:inset 0 -5px 0 rgba(0,0,0,.16), 0 3px 0 rgba(0,0,0,.38);
 }
-.cell.house{background:var(--house)}
+.cell.hut{background:var(--hut)}
 .cell.monastery{background:var(--monastery)}
-.cell.field{background:var(--field)}
+.cell.grain{background:var(--grain)}
 .cell.water{background:var(--water)}
 .cell.bad{outline:3px solid var(--bad); outline-offset:1px}
 .cell.pop{animation:pop .22s ease-out}

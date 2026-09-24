@@ -31,9 +31,9 @@
 const W = 8;               // szerokość planszy
 const MONASTERY_GAP = 2;   // klasztor: tyle wolnych pól przerwy od innych bloczków (K**H = OK, K*H = za blisko)
 const TOOLS = {
-  house:     {e:'🏠', n:'Domek'},
+  hut:       {e:'🛖', n:'Chatka'},
   monastery: {e:'⛪', n:'Klasztor'},
-  field:     {e:'🌾', n:'Pole'},
+  grain:     {e:'🌾', n:'Zboże'},
   water:     {e:'💧', n:'Woda'},
 };
 
@@ -54,8 +54,8 @@ const dist = (a,b) => Math.hypot(Math.floor(a/W)-Math.floor(b/W), a%W-b%W);
    unlock: odblokowuje bloczek w chwili pojawienia się zasady
    expand: w chwili pojawienia się zasady linia zmienia się w szachownicę */
 const RULES = [
-  { text:'Postaw co najmniej 2 domki.',
-    check:g=>{const n=of(g,'house').length; return {ok:n>=2, bad:[], info:n+'/2'};} },
+  { text:'Postaw co najmniej 2 chatki.',
+    check:g=>{const n=of(g,'hut').length; return {ok:n>=2, bad:[], info:n+'/2'};} },
 
   { text:'Postaw klasztor.', unlock:'monastery',
     check:g=>({ok:of(g,'monastery').length>=1, bad:[]}) },
@@ -63,25 +63,25 @@ const RULES = [
   { text:`Klasztor musi stać co najmniej ${MONASTERY_GAP} pola od wszystkich innych bloczków.`,
     check:g=>{
       const ks=of(g,'monastery'), bad=[];
-      ks.forEach(k=>g.cells.forEach((t,b)=>{      // każdy inny bloczek (domek, pole, woda, klasztor)
+      ks.forEach(k=>g.cells.forEach((t,b)=>{      // każdy inny bloczek (chatka, zboże, woda, klasztor)
         if(t && b!==k && dist(k,b) < MONASTERY_GAP+1) bad.push(k,b);
       }));
       return {ok:ks.length>0 && !bad.length, bad};
     } },
 
-  { text:'Połóż 3 pola.', unlock:'field',
-    check:g=>{const n=of(g,'field').length; return {ok:n>=3, bad:[], info:n+'/3'};} },
+  { text:'Połóż 3 zboża.', unlock:'grain',
+    check:g=>{const n=of(g,'grain').length; return {ok:n>=3, bad:[], info:n+'/3'};} },
 
-  { text:'Każde pole musi stać obok dokładnie 1 domku.',
+  { text:'Każde zboże musi stać obok dokładnie 1 chatki.',
     check:g=>{
-      const fs=of(g,'field');
-      const bad=fs.filter(f=>nb(g,f).filter(i=>g.cells[i]==='house').length!==1);
+      const fs=of(g,'grain');
+      const bad=fs.filter(f=>nb(g,f).filter(i=>g.cells[i]==='hut').length!==1);
       return {ok:fs.length>0 && !bad.length, bad};
     } },
 
-  { text:'Każdy domek musi stykać się z wodą.', unlock:'water', expand:true,
+  { text:'Każda chatka musi stykać się z wodą.', unlock:'water', expand:true,
     check:g=>{
-      const hs=of(g,'house');
+      const hs=of(g,'hut');
       const bad=hs.filter(h=>!nb(g,h).some(i=>g.cells[i]==='water'));
       return {ok:hs.length>0 && !bad.length, bad};
     } },
@@ -96,17 +96,41 @@ const RULES = [
       const bad=ws.filter(i=>!seen.has(i));
       return {ok:!bad.length, bad};
     } },
+
+  { text:'Chatki muszą łączyć się skokami konika szachowego (litera L): z każdej da się dojść do każdej.',
+    check:g=>{
+      const hs=of(g,'hut'); if(!hs.length) return {ok:false,bad:[]};
+      const knight=(a,b)=>Math.abs(Math.floor(a/W)-Math.floor(b/W))*Math.abs(a%W-b%W)===2;
+      const seen=new Set(), comps=[];
+      hs.forEach(s=>{
+        if(seen.has(s)) return;
+        const grp=[s]; seen.add(s);
+        for(let j=0;j<grp.length;j++) hs.forEach(o=>{
+          if(!seen.has(o) && knight(grp[j],o)){seen.add(o); grp.push(o);}
+        });
+        comps.push(grp);
+      });
+      const main=comps.reduce((a,b)=>b.length>a.length?b:a);
+      const bad=hs.filter(h=>!main.includes(h));
+      return {ok:!bad.length, bad, info:comps.length>1 ? 'grup: '+comps.length : ''};
+    } },
+
+  { text:'Chatek musi być tyle samo co zbóż.',
+    check:g=>{
+      const h=of(g,'hut').length, z=of(g,'grain').length;
+      return {ok:h>0 && h===z, bad:[], info:`${TOOLS.hut.e} ${h} · ${TOOLS.grain.e} ${z}`};
+    } },
 ];
 
 /* ====== STAN ====== */
 let cells, rows, stage, tool, notice, pop, newRule;
 function init(){
-  cells = Array(W).fill(null); rows = 1; stage = 1; tool = 'house'; notice = '';
+  cells = Array(W).fill(null); rows = 1; stage = 1; tool = 'hut'; notice = '';
   update();
 }
 const grid = () => ({cells, rows});
 const revealed = () => RULES.slice(0, stage);
-const unlocked = () => ['house', ...revealed().map(r=>r.unlock).filter(Boolean)];
+const unlocked = () => ['hut', ...revealed().map(r=>r.unlock).filter(Boolean)];
 
 function update(){
   const before = unlocked();
@@ -135,22 +159,29 @@ function render(){
     b.onclick = ()=>{ tool = tool===t ? null : t; notice=''; render(); };
     tools.appendChild(b);
   });
+  const er = document.createElement('button');            // gumka: tool === null
+  er.className = 'tool'; er.textContent = '🗑️ Usuń';
+  er.setAttribute('aria-pressed', tool===null);
+  er.onclick = ()=>{ tool = null; notice=''; render(); };
+  tools.appendChild(er);
   document.getElementById('status').textContent = notice ||
-    (tool ? `Zaznaczone: ${TOOLS[tool].n}. Klik na pole stawia bloczek.`
-          : 'Nic nie zaznaczone. Klik na pole usuwa bloczek.');
+    (tool ? `Zaznaczone: ${TOOLS[tool].n}. Klik na kratkę stawia bloczek.`
+          : 'Gumka: klik na kratkę usuwa bloczek.');
 
   const board = document.getElementById('board'); board.innerHTML = '';
   cells.forEach((t,i)=>{
     const b = document.createElement('button');
     b.className = 'cell' + (t?' '+t:'') + (bad.has(i)?' bad':'') + (i===pop?' pop':'');
     b.textContent = t ? TOOLS[t].e : '';
-    b.setAttribute('aria-label', `Pole ${Math.floor(i/W)+1}, ${i%W+1}` + (t?': '+TOOLS[t].n:''));
+    b.setAttribute('aria-label', `Kratka ${Math.floor(i/W)+1}, ${i%W+1}` + (t?': '+TOOLS[t].n:''));
     b.onclick = ()=>{ cells[i] = tool; pop = tool ? i : null; notice=''; update(); };
     board.appendChild(b);
   });
 
   const list = document.getElementById('rules'); list.innerHTML = '';
-  for(let k=stage-1; k>=0; k--){           // najnowsza zasada na górze
+  const order = [...Array(stage).keys()].reverse()     // najnowsze pierwsze...
+    .sort((a,b)=> results[a].ok - results[b].ok);      // ...ale czerwone przed zielonymi
+  for(const k of order){
     const r = results[k], li = document.createElement('li');
     li.className = 'rule' + (r.ok?' ok':'') + (k===newRule?' new':'');
     li.innerHTML = `<span class="mark">${r.ok?'✓':'✗'}</span><span></span><span class="info"></span>`;
