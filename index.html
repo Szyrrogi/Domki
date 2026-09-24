@@ -35,6 +35,25 @@ const TOOLS = {
   monastery: {e:'⛪', n:'Klasztor'},
   grain:     {e:'🌾', n:'Zboże'},
   water:     {e:'💧', n:'Woda'},
+  stone:     {e:'🪨', n:'Kamień'},
+};
+
+// Cyfry jak na wyświetlaczu, siatka 5 wierszy x 3 kolumny (1 = kamień)
+const DIGITS = {
+  0:['111','101','101','101','111'], 1:['010','010','010','010','010'],
+  2:['111','001','111','100','111'], 3:['111','001','111','001','111'],
+  4:['101','101','111','001','001'], 5:['111','100','111','001','111'],
+  6:['111','100','111','101','111'], 7:['111','001','001','001','001'],
+  8:['111','101','111','101','111'], 9:['111','101','111','001','111'],
+};
+const DIGIT_H = 5, DIGIT_W = 3;
+// indeksy pól cyfry `d`, przesuniętej o (dr,dc) na planszy
+const digitCells = (d,dr,dc) => {
+  const out = [];
+  DIGITS[d].forEach((row,r)=> [...row].forEach((ch,c)=>{
+    if(ch==='1') out.push((dr+r)*W + (dc+c));
+  }));
+  return out;
 };
 
 /* ====== POMOCNICY ====== */
@@ -98,6 +117,7 @@ const RULES = [
     } },
 
   { text:'Chatki muszą łączyć się skokami konika szachowego (litera L): z każdej da się dojść do każdej.',
+    unlock:'stone',
     check:g=>{
       const hs=of(g,'hut'); if(!hs.length) return {ok:false,bad:[]};
       const knight=(a,b)=>Math.abs(Math.floor(a/W)-Math.floor(b/W))*Math.abs(a%W-b%W)===2;
@@ -115,10 +135,31 @@ const RULES = [
       return {ok:!bad.length, bad, info:comps.length>1 ? 'grup: '+comps.length : ''};
     } },
 
+  { text:()=>`Ułóż z kamieni ostatnią cyfrę obecnej godziny na terenie 3x5.`,
+    check:g=>{
+      const digit = new Date().getHours()%10;
+      const st = of(g,'stone');
+      const want = DIGITS[digit].join('').split('').filter(c=>c==='1').length;
+      if(!st.length) return {ok:false, bad:[], info:`0/${want}`};
+      // szukamy takiego przesunięcia cyfry na planszy, żeby dokładnie pokryło się z kamieniami
+      for(let dr=0; dr<=g.rows-DIGIT_H; dr++) for(let dc=0; dc<=W-DIGIT_W; dc++){
+        const want2 = digitCells(digit,dr,dc);
+        if(want2.length===st.length && want2.every(i=>g.cells[i]==='stone'))
+          return {ok:true, bad:[], info:`${st.length}/${want}`};
+      }
+      return {ok:false, bad:st, info:`${st.length}/${want}`};
+    } },
+
   { text:'Chatek musi być tyle samo co zbóż.',
     check:g=>{
       const h=of(g,'hut').length, z=of(g,'grain').length;
       return {ok:h>0 && h===z, bad:[], info:`${TOOLS.hut.e} ${h} · ${TOOLS.grain.e} ${z}`};
+    } },
+
+  { text:'Liczba chatek musi być dzielnikiem liczby 392392.',
+    check:g=>{
+      const h=of(g,'hut').length;
+      return {ok:h>0 && 392392 % h === 0, bad:[], info:`${h} chatek`};
     } },
 ];
 
@@ -185,7 +226,8 @@ function render(){
     const r = results[k], li = document.createElement('li');
     li.className = 'rule' + (r.ok?' ok':'') + (k===newRule?' new':'');
     li.innerHTML = `<span class="mark">${r.ok?'✓':'✗'}</span><span></span><span class="info"></span>`;
-    li.children[1].textContent = `${k+1}. ${RULES[k].text}`;
+    const txt = typeof RULES[k].text === 'function' ? RULES[k].text() : RULES[k].text;
+    li.children[1].textContent = `${k+1}. ${txt}`;
     li.children[2].textContent = r.info || '';
     list.appendChild(li);
   }
@@ -197,6 +239,7 @@ function render(){
 
 document.getElementById('reset').onclick = init;
 init();
+setInterval(()=>{ notice=''; update(); }, 30000);   // co pół minuty: godzina mogła się zmienić
 </script>
 </body>
 </html>
