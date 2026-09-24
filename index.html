@@ -29,7 +29,7 @@
 <script>
 /* ====== KONFIGURACJA ====== */
 const W = 8;               // szerokość planszy
-const MONASTERY_DIST = 2;  // klasztor: min. odległość (w polach) od innych budynków
+const MONASTERY_GAP = 2;   // klasztor: tyle wolnych pól przerwy od innych bloczków (K**H = OK, K*H = za blisko)
 const TOOLS = {
   house:     {e:'🏠', n:'Domek'},
   monastery: {e:'⛪', n:'Klasztor'},
@@ -46,7 +46,8 @@ const nb = (g,i) => {            // sąsiedzi w 4 kierunkach
   if(c>0) o.push(i-1); if(c<W-1) o.push(i+1);
   return o;
 };
-const cheb = (a,b) => Math.max(Math.abs(Math.floor(a/W)-Math.floor(b/W)), Math.abs(a%W-b%W));
+// odległość środków pól wg Pitagorasa (ukos = 1.41)
+const dist = (a,b) => Math.hypot(Math.floor(a/W)-Math.floor(b/W), a%W-b%W);
 
 /* ====== ZASADY ======
    check(g) -> {ok, bad:[indeksy pól do podświetlenia], info}
@@ -59,11 +60,11 @@ const RULES = [
   { text:'Postaw klasztor.', unlock:'monastery',
     check:g=>({ok:of(g,'monastery').length>=1, bad:[]}) },
 
-  { text:`Klasztor musi stać co najmniej ${MONASTERY_DIST} pola od wszystkich innych bloczków.`,
+  { text:`Klasztor musi stać co najmniej ${MONASTERY_GAP} pola od wszystkich innych bloczków.`,
     check:g=>{
       const ks=of(g,'monastery'), bad=[];
       ks.forEach(k=>g.cells.forEach((t,b)=>{      // każdy inny bloczek (domek, pole, woda, klasztor)
-        if(t && b!==k && cheb(k,b)<MONASTERY_DIST) bad.push(k,b);
+        if(t && b!==k && dist(k,b) < MONASTERY_GAP+1) bad.push(k,b);
       }));
       return {ok:ks.length>0 && !bad.length, bad};
     } },
