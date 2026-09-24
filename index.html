@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gra w domki</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>Gra w domki</h1>
+  <p class="sub">Buduj tak, żeby spełnić wszystkie zasady. Nowe pojawiają się, gdy poprzednie są spełnione.</p>
+
+  <section>
+    <div class="tools" id="tools"></div>
+    <p class="status" id="status"></p>
+    <div class="board" id="board"></div>
+    <button class="reset" id="reset">Zacznij od nowa</button>
+  </section>
+
+  <section>
+    <ol class="rules" id="rules"></ol>
+    <div id="win"></div>
+  </section>
+</main>
+
+<script>
+/* ====== KONFIGURACJA ====== */
+const W = 8;               // szerokość planszy
+const MONASTERY_DIST = 2;  // klasztor: min. odległość (w polach) od innych budynków
+const TOOLS = {
+  house:     {e:'🏠', n:'Domek'},
+  monastery: {e:'⛪', n:'Klasztor'},
+  field:     {e:'🌾', n:'Pole'},
+  water:     {e:'💧', n:'Woda'},
+};
+
+/* ====== POMOCNICY ====== */
+// g = {cells, rows}; indeks = wiersz*W + kolumna
+const of = (g,t) => g.cells.flatMap((c,i)=> c===t ? [i] : []);
+const nb = (g,i) => {            // sąsiedzi w 4 kierunkach
+  const r=Math.floor(i/W), c=i%W, o=[];
+  if(r>0) o.push(i-W); if(r<g.rows-1) o.push(i+W);
+  if(c>0) o.push(i-1); if(c<W-1) o.push(i+1);
+  return o;
+};
+const cheb = (a,b) => Math.max(Math.abs(Math.floor(a/W)-Math.floor(b/W)), Math.abs(a%W-b%W));
+
+/* ====== ZASADY ======
+   check(g) -> {ok, bad:[indeksy pól do podświetlenia], info}
+   unlock: odblokowuje bloczek w chwili pojawienia się zasady
+   expand: w chwili pojawienia się zasady linia zmienia się w szachownicę */
+const RULES = [
+  { text:'Postaw co najmniej 2 domki.',
+    check:g=>{const n=of(g,'house').length; return {ok:n>=2, bad:[], info:n+'/2'};} },
+
+  { text:'Postaw klasztor.', unlock:'monastery',
+    check:g=>({ok:of(g,'monastery').length>=1, bad:[]}) },
+
+  { text:`Klasztor musi stać co najmniej ${MONASTERY_DIST} pola od wszystkich innych bloczków.`,
+    check:g=>{
+      const ks=of(g,'monastery'), bad=[];
+      ks.forEach(k=>g.cells.forEach((t,b)=>{      // każdy inny bloczek (domek, pole, woda, klasztor)
+        if(t && b!==k && cheb(k,b)<MONASTERY_DIST) bad.push(k,b);
+      }));
+      return {ok:ks.length>0 && !bad.length, bad};
+    } },
+
+  { text:'Połóż 3 pola.', unlock:'field',
+    check:g=>{const n=of(g,'field').length; return {ok:n>=3, bad:[], info:n+'/3'};} },
+
+  { text:'Każde pole musi stać obok dokładnie 1 domku.',
+    check:g=>{
+      const fs=of(g,'field');
+      const bad=fs.filter(f=>nb(g,f).filter(i=>g.cells[i]==='house').length!==1);
+      return {ok:fs.length>0 && !bad.length, bad};
+    } },
+
+  { text:'Każdy domek musi stykać się z wodą.', unlock:'water', expand:true,
+    check:g=>{
+      const hs=of(g,'house');
+      const bad=hs.filter(h=>!nb(g,h).some(i=>g.cells[i]==='water'));
+      return {ok:hs.length>0 && !bad.length, bad};
+    } },
+
+  { text:'Wszystkie wody muszą być ze sobą połączone.',
+    check:g=>{
+      const ws=of(g,'water'); if(!ws.length) return {ok:false,bad:[]};
+      const seen=new Set([ws[0]]), q=[ws[0]];
+      while(q.length) nb(g,q.pop()).forEach(i=>{
+        if(g.cells[i]==='water' && !seen.has(i)){seen.add(i); q.push(i);}
+      });
+      const bad=ws.filter(i=>!seen.has(i));
+      return {ok:!bad.length, bad};
+    } },
+];
+
+/* ====== STAN ====== */
+let cells, rows, stage, tool, notice, pop, newRule;
+function init(){
+  cells = Array(W).fill(null); rows = 1; stage = 1; tool = 'house'; notice = '';
+  update();
+}
+const grid = () => ({cells, rows});
+const revealed = () => RULES.slice(0, stage);
+const unlocked = () => ['house', ...revealed().map(r=>r.unlock).filter(Boolean)];
+
+function update(){
+  const before = unlocked();
+  const s0 = stage;
+  while(stage < RULES.length && revealed().every(r=>r.check(grid()).ok)) stage++;
+  if(stage > s0) newRule = stage - 1;
+  if(revealed().some(r=>r.expand) && rows === 1){
+    rows = W; cells = cells.concat(Array(W*(W-1)).fill(null));
+  }
+  const fresh = unlocked().filter(t=>!before.includes(t));
+  if(fresh.length) notice = 'Odblokowano: ' + fresh.map(t=>TOOLS[t].e+' '+TOOLS[t].n).join(', ');
+  render();
+}
+
+/* ====== WIDOK ====== */
+function render(){
+  const g = grid();
+  const results = revealed().map(r=>r.check(g));
+  const bad = new Set(results.flatMap(r=>r.bad));
+
+  const tools = document.getElementById('tools'); tools.innerHTML = '';
+  unlocked().forEach(t=>{
+    const b = document.createElement('button');
+    b.className = 'tool'; b.textContent = TOOLS[t].e+' '+TOOLS[t].n;
+    b.setAttribute('aria-pressed', tool===t);
+    b.onclick = ()=>{ tool = tool===t ? null : t; notice=''; render(); };
+    tools.appendChild(b);
+  });
+  document.getElementById('status').textContent = notice ||
+    (tool ? `Zaznaczone: ${TOOLS[tool].n}. Klik na pole stawia bloczek.`
+          : 'Nic nie zaznaczone. Klik na pole usuwa bloczek.');
+
+  const board = document.getElementById('board'); board.innerHTML = '';
+  cells.forEach((t,i)=>{
+    const b = document.createElement('button');
+    b.className = 'cell' + (t?' '+t:'') + (bad.has(i)?' bad':'') + (i===pop?' pop':'');
+    b.textContent = t ? TOOLS[t].e : '';
+    b.setAttribute('aria-label', `Pole ${Math.floor(i/W)+1}, ${i%W+1}` + (t?': '+TOOLS[t].n:''));
+    b.onclick = ()=>{ cells[i] = tool; pop = tool ? i : null; notice=''; update(); };
+    board.appendChild(b);
+  });
+
+  const list = document.getElementById('rules'); list.innerHTML = '';
+  for(let k=stage-1; k>=0; k--){           // najnowsza zasada na górze
+    const r = results[k], li = document.createElement('li');
+    li.className = 'rule' + (r.ok?' ok':'') + (k===newRule?' new':'');
+    li.innerHTML = `<span class="mark">${r.ok?'✓':'✗'}</span><span></span><span class="info"></span>`;
+    li.children[1].textContent = `${k+1}. ${RULES[k].text}`;
+    li.children[2].textContent = r.info || '';
+    list.appendChild(li);
+  }
+  document.getElementById('win').innerHTML =
+    (stage===RULES.length && results.every(r=>r.ok))
+      ? '<div class="win">Wszystkie zasady spełnione! Kolejne wkrótce.</div>' : '';
+  pop = null; newRule = null;
+}
+
+document.getElementById('reset').onclick = init;
+init();
+</script>
+</body>
+</html>
