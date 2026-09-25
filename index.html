@@ -29,13 +29,16 @@
 <script>
 /* ====== KONFIGURACJA ====== */
 const W = 8;               // szerokość planszy
-const MONASTERY_GAP = 2;   // klasztor: tyle wolnych pól przerwy od innych bloczków (K**H = OK, K*H = za blisko)
+const MONASTERY_MIN_DIST = 2.2;   // klasztor: minimalna odległość środków pól od innego bloczku (2 to za mało — pozwala na zboże 2 pola w bok; 2.2 wymusza już przynajmniej skok wieży o 2+1, czyli √5 ≈ 2.236)
 const TOOLS = {
   hut:       {e:'🛖', n:'Chatka'},
   monastery: {e:'⛪', n:'Klasztor'},
   grain:     {e:'🌾', n:'Zboże'},
   water:     {e:'💧', n:'Woda'},
   stone:     {e:'🪨', n:'Kamień'},
+  stable:    {e:'🐴', n:'Stajnia'},
+  well:      {e:'⛲', n:'Studnia'},
+  torch:     {e:'🔥', n:'Pochodnia'},
 };
 
 // Cyfry jak na wyświetlaczu, siatka 5 wierszy x 3 kolumny (1 = kamień)
@@ -67,6 +70,17 @@ const nb = (g,i) => {            // sąsiedzi w 4 kierunkach
 };
 // odległość środków pól wg Pitagorasa (ukos = 1.41)
 const dist = (a,b) => Math.hypot(Math.floor(a/W)-Math.floor(b/W), a%W-b%W);
+const nb8 = (g,i) => {           // sąsiedzi we wszystkich 8 kierunkach (z ukosami)
+  const r=Math.floor(i/W), c=i%W, o=[];
+  for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){
+    if(!dr && !dc) continue;
+    const rr=r+dr, cc=c+dc;
+    if(rr>=0 && rr<g.rows && cc>=0 && cc<W) o.push(rr*W+cc);
+  }
+  return o;
+};
+// notacja szachowa "e4" -> indeks pola (rząd 1 na dole, jak w szachach)
+const square = (g,s) => (g.rows - Number(s[1])) * W + (s.charCodeAt(0) - 97);
 
 /* ====== ZASADY ======
    check(g) -> {ok, bad:[indeksy pól do podświetlenia], info}
@@ -79,11 +93,11 @@ const RULES = [
   { text:'Postaw klasztor.', unlock:'monastery',
     check:g=>({ok:of(g,'monastery').length>=1, bad:[]}) },
 
-  { text:`Klasztor musi stać co najmniej ${MONASTERY_GAP} pola od wszystkich innych bloczków.`,
+  { text:`Klasztor musi stać co najmniej ${MONASTERY_MIN_DIST} pola od wszystkich innych bloczków.`,
     check:g=>{
       const ks=of(g,'monastery'), bad=[];
       ks.forEach(k=>g.cells.forEach((t,b)=>{      // każdy inny bloczek (chatka, zboże, woda, klasztor)
-        if(t && b!==k && dist(k,b) < MONASTERY_GAP+1) bad.push(k,b);
+        if(t && b!==k && dist(k,b) < MONASTERY_MIN_DIST) bad.push(k,b);
       }));
       return {ok:ks.length>0 && !bad.length, bad};
     } },
@@ -139,15 +153,18 @@ const RULES = [
     check:g=>{
       const digit = new Date().getHours()%10;
       const st = of(g,'stone');
-      const want = DIGITS[digit].join('').split('').filter(c=>c==='1').length;
+      const want = digitCells(digit,0,0).length;    // ile kamieni potrzeba (kształt cyfry)
       if(!st.length) return {ok:false, bad:[], info:`0/${want}`};
-      // szukamy takiego przesunięcia cyfry na planszy, żeby dokładnie pokryło się z kamieniami
+      // szukamy takiego przesunięcia cyfry na planszy, żeby TE pola miały kamień
+      // (inne kamienie na planszy, poza kształtem, mogą stać gdziekolwiek — nie przeszkadzają)
+      let best = 0;
       for(let dr=0; dr<=g.rows-DIGIT_H; dr++) for(let dc=0; dc<=W-DIGIT_W; dc++){
-        const want2 = digitCells(digit,dr,dc);
-        if(want2.length===st.length && want2.every(i=>g.cells[i]==='stone'))
-          return {ok:true, bad:[], info:`${st.length}/${want}`};
+        const shape = digitCells(digit,dr,dc);
+        const have = shape.filter(i=>g.cells[i]==='stone').length;
+        if(have > best) best = have;
+        if(have === shape.length) return {ok:true, bad:[], info:`${want}/${want}`};
       }
-      return {ok:false, bad:st, info:`${st.length}/${want}`};
+      return {ok:false, bad:[], info:`${best}/${want}`};
     } },
 
   { text:'Chatek musi być tyle samo co zbóż.',
@@ -161,6 +178,61 @@ const RULES = [
       const h=of(g,'hut').length;
       return {ok:h>0 && 392392 % h === 0, bad:[], info:`${h} chatek`};
     } },
+
+  { text:'Postaw stajnię.', unlock:'stable',
+    check:g=>({ok:of(g,'stable').length>=1, bad:[]}) },
+
+  { text:'Każda stajnia musi stać bliżej niż 2.5 pola od chatki.',
+    check:g=>{
+      const st=of(g,'stable'), hs=of(g,'hut');
+      if(!st.length || !hs.length) return {ok:false, bad:[]};
+      const bad = st.filter(s=>Math.min(...hs.map(h=>dist(s,h))) >= 2.5);
+      return {ok:!bad.length, bad};
+    } },
+
+  { text:'Klasztory nie mogą stać na skraju mapy.',
+    check:g=>{
+      const ks=of(g,'monastery');
+      const edge=i=>{const r=Math.floor(i/W), c=i%W; return r===0||c===0||r===g.rows-1||c===W-1;};
+      const bad=ks.filter(edge);
+      return {ok:ks.length>0 && !bad.length, bad};
+    } },
+
+  { text:'Studnia musi mieć wokół siebie (8 pól, razem z ukosami) co najmniej 6 różnych rodzajów bloków.',
+    unlock:'well',
+    check:g=>{
+      const ws=of(g,'well');
+      const variety=i=>new Set(nb8(g,i).map(j=>g.cells[j]).filter(Boolean)).size;
+      const ok = ws.length>0 && ws.some(w=>variety(w)>=6);
+      const best = ws.length ? Math.max(...ws.map(variety)) : 0;
+      return {ok, bad:[], info: ws.length ? `${best}/6` : ''};
+    } },
+
+  { text:'Każda stajnia musi stać dalej niż 2 pola od chatki.',
+    check:g=>{
+      const st=of(g,'stable'), hs=of(g,'hut');
+      if(!st.length || !hs.length) return {ok:false, bad:[]};
+      const bad = st.filter(s=>Math.min(...hs.map(h=>dist(s,h))) <= 2);
+      return {ok:!bad.length, bad};
+    } },
+
+  { text:'W dolnym rzędzie zapisz chatkami (w binarnym zapisie) liczbę zbóż stojących na planszy.',
+    check:g=>{
+      const grain = of(g,'grain').length;
+      const rowStart = (g.rows-1)*W;
+      const bits = [...Array(W).keys()].map(c=> g.cells[rowStart+c]==='hut' ? 1 : 0);
+      const value = bits.reduce((acc,b)=>acc*2+b, 0);
+      return {ok: grain>0 && value===grain, bad:[], info:`${value} / ${grain}`};
+    } },
+
+  { text:'Umieść wodę na czterech polach zgodnie z początkiem piosenki https://youtu.be/Fy-k60iEpb4', unlock:'torch',
+    check:g=>{
+      const need=['e4','c6','d4','d5'].map(s=>square(g,s));
+      return {ok: need.every(i=>g.cells[i]==='water'), bad:[]};
+    } },
+
+  { text:'Ilość kamieni ma być równa ilości starców a ilość pochodni ilości lamp ognistych Apokalipsa św Jana 4,4',
+    check:g=>({ok: of(g,'stone').length===24 && of(g,'torch').length===7, bad:[]}) },
 ];
 
 /* ====== STAN ====== */
