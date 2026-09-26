@@ -93,7 +93,7 @@ const RULES = [
   { text:'Postaw klasztor.', unlock:'monastery',
     check:g=>({ok:of(g,'monastery').length>=1, bad:[]}) },
 
-  { text:`Klasztor musi stać co najmniej ${MONASTERY_MIN_DIST} pola od wszystkich innych bloczków.`,
+  { text:`Klasztor musi być oddalony o minimum ${MONASTERY_MIN_DIST} pola od każdego innego bloku.`,
     check:g=>{
       const ks=of(g,'monastery'), bad=[];
       ks.forEach(k=>g.cells.forEach((t,b)=>{      // każdy inny bloczek (chatka, zboże, woda, klasztor)
@@ -105,7 +105,7 @@ const RULES = [
   { text:'Połóż 3 zboża.', unlock:'grain',
     check:g=>{const n=of(g,'grain').length; return {ok:n>=3, bad:[], info:n+'/3'};} },
 
-  { text:'Każde zboże musi stać obok dokładnie 1 chatki.',
+  { text:'Każde zboże musi sąsiadować z dokładnie jedną chatką.',
     check:g=>{
       const fs=of(g,'grain');
       const bad=fs.filter(f=>nb(g,f).filter(i=>g.cells[i]==='hut').length!==1);
@@ -130,7 +130,7 @@ const RULES = [
       return {ok:!bad.length, bad};
     } },
 
-  { text:'Chatki muszą łączyć się skokami konika szachowego (litera L): z każdej da się dojść do każdej.',
+  { text:'Chatki muszą tworzyć sieć połączoną skokami szachowego skoczka (w kształcie litery L) – z każdej musisz móc dotrzeć do pozostałych.',
     unlock:'stone',
     check:g=>{
       const hs=of(g,'hut'); if(!hs.length) return {ok:false,bad:[]};
@@ -149,7 +149,7 @@ const RULES = [
       return {ok:!bad.length, bad, info:comps.length>1 ? 'grup: '+comps.length : ''};
     } },
 
-  { text:()=>`Ułóż z kamieni ostatnią cyfrę obecnej godziny na terenie 3x5.`,
+  { text:()=>`Ułóż z kamieni w siatce 3x5 pól ostatnią cyfrę z samej godziny, pomijając minuty (np. dla czasu 14:35 ułóż cyfrę 4).`,
     check:g=>{
       const digit = new Date().getHours()%10;
       const st = of(g,'stone');
@@ -182,7 +182,7 @@ const RULES = [
   { text:'Postaw stajnię.', unlock:'stable',
     check:g=>({ok:of(g,'stable').length>=1, bad:[]}) },
 
-  { text:'Każda stajnia musi stać bliżej niż 2.5 pola od chatki.',
+  { text:'Odległość między każdą stajnią a najbliższą chatką musi być mniejsza niż 2,5 pola.',
     check:g=>{
       const st=of(g,'stable'), hs=of(g,'hut');
       if(!st.length || !hs.length) return {ok:false, bad:[]};
@@ -190,7 +190,7 @@ const RULES = [
       return {ok:!bad.length, bad};
     } },
 
-  { text:'Klasztory nie mogą stać na skraju mapy.',
+  { text:'Żaden klasztor nie może znajdować się na krawędzi planszy.',
     check:g=>{
       const ks=of(g,'monastery');
       const edge=i=>{const r=Math.floor(i/W), c=i%W; return r===0||c===0||r===g.rows-1||c===W-1;};
@@ -198,7 +198,7 @@ const RULES = [
       return {ok:ks.length>0 && !bad.length, bad};
     } },
 
-  { text:'Studnia musi mieć wokół siebie (8 pól, razem z ukosami) co najmniej 6 różnych rodzajów bloków.',
+  { text:'Przynamniej jedna studnia musi bezpośrednio sąsiadować (wliczając skosy) z co najmniej 6 różnymi rodzajami bloków.',
     unlock:'well',
     check:g=>{
       const ws=of(g,'well');
@@ -208,7 +208,7 @@ const RULES = [
       return {ok, bad:[], info: ws.length ? `${best}/6` : ''};
     } },
 
-  { text:'Każda stajnia musi stać dalej niż 2 pola od chatki.',
+  { text:'Odległość między każdą stajnią a chatką musi być większa niż 2 pola.',
     check:g=>{
       const st=of(g,'stable'), hs=of(g,'hut');
       if(!st.length || !hs.length) return {ok:false, bad:[]};
@@ -216,7 +216,7 @@ const RULES = [
       return {ok:!bad.length, bad};
     } },
 
-  { text:'W dolnym rzędzie zapisz chatkami (w binarnym zapisie) liczbę zbóż stojących na planszy.',
+  { text:'Zapisz w dolnym rzędzie liczbę zbóż, używając chatek jako kodu binarnego (chatka = 1, brak chatki = 0).',
     check:g=>{
       const grain = of(g,'grain').length;
       const rowStart = (g.rows-1)*W;
@@ -231,7 +231,7 @@ const RULES = [
       return {ok: need.every(i=>g.cells[i]==='water'), bad:[]};
     } },
 
-  { text:'Ilość kamieni ma być równa ilości starców a ilość pochodni ilości lamp ognistych Apokalipsa św Jana 4,4',
+  { text:'Liczba kamieni ma być równa liczbie starców a liczba pochodni liczbie lamp ognistych (zgodnie z Apokalipsą św. Jana 4,4).',
     check:g=>({ok: of(g,'stone').length===24 && of(g,'torch').length===7, bad:[]}) },
 ];
 
@@ -309,7 +309,9 @@ function render(){
   pop = null; newRule = null;
 }
 
-document.getElementById('reset').onclick = init;
+document.getElementById('reset').onclick = ()=>{
+  if(confirm('Na pewno zacząć od nowa? Cała plansza zostanie wyczyszczona.')) init();
+};
 init();
 setInterval(()=>{ notice=''; update(); }, 30000);   // co pół minuty: godzina mogła się zmienić
 </script>
