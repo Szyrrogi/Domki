@@ -54,7 +54,12 @@ const TOOLS = {
   well:      {e:'⛲', n:'Studnia'},
   torch:     {e:'🔥', n:'Pochodnia'},
   hole:      {e:'🕳️', n:'Dziura'},
+  bluefire:  {e:'🔥', n:'Niebieski ogień'},
+  university:{e:'🏛️', n:'Uniwersytet'},
+  wizard:    {e:'🧙', n:'Domek maga'},
 };
+const BUILDINGS = ['hut','monastery','stable','well','university','wizard'];
+const icon = t => t==='bluefire' ? '<span class="bf">🔥</span>' : TOOLS[t].e;
 
 const DIGITS = {
   0:['111','101','101','101','111'], 1:['010','010','010','010','010'],
@@ -151,13 +156,14 @@ const RULES = [
       return {ok:!bad.length, bad};
     } },
 
-  { text:'Chatki muszą tworzyć sieć połączoną skokami szachowego skoczka (w kształcie litery L) – z każdej musisz móc dotrzeć do pozostałych.',
+  { text:'Chatki muszą tworzyć sieć połączoną skokami szachowego skoczka (w kształcie litery L) – z każdej musisz móc dotrzeć do pozostałych. Skok to przesunięcie o 2 pola w jednym wymiarze, o 1 w drugim i o 0 w trzecim, w dowolnej kolejności wymiarów (także między piętrami).',
     unlock:'stone',
     check:g=>{
       const hs=of(g,'hut'); if(!hs.length) return {ok:false,bad:[]};
       const knight=(a,b)=>{
         const la=localOf(g,a), lb=localOf(g,b);
-        return Math.abs(Math.floor(la/W)-Math.floor(lb/W)) * Math.abs(la%W-lb%W) === 2;
+        const d=[Math.floor(la/W)-Math.floor(lb/W), la%W-lb%W, floorOf(g,a)-floorOf(g,b)];
+        return d.map(Math.abs).sort().join()==='0,1,2';   // o 2, o 1 i o 0 w dowolnych wymiarach
       };
       const seen=new Set(), comps=[];
       hs.forEach(s=>{
@@ -258,6 +264,9 @@ const RULES = [
       return {ok: need.every(i=>g.cells[i]==='water'), bad:[]};
     } },
 
+  { text:'Postaw pochodnię. Uwaga: ogień może podpalić sąsiadujące budynki i zboża!',
+    check:g=>({ok:of(g,'torch').length>=1, bad:[]}) },
+
   { text:'Liczba kamieni ma być równa liczbie starców a liczba pochodni liczbie lamp ognistych (zgodnie z Apokalipsą św. Jana 4,4).',
     check:g=>({ok: of(g,'stone').length===24 && of(g,'torch').length===7, bad:[]}) },
 
@@ -286,10 +295,95 @@ const RULES = [
       return {ok, bad: ok ? [] : holes, info: ok ? 'Max' : 'Za blisko'};
     } },
 
-  { text:'Fkdwhn pxvl ebć grnłdgqlh r slęć zlęfhm qlż vwdmql. (Klucz 3)',
+  { text:'Fkdwhn pxvl ebć grnłdgqlh r slęć zlęfhm qlż vwdmql. (Szyfr Cezara. Klucz 3)',
     check:g=>{
       const h=of(g,'hut').length, s=of(g,'stable').length;
       return {ok: h===s+5, bad:[], info:`${TOOLS.hut.e} ${h} · ${TOOLS.stable.e} ${s}`};
+    } },
+  { text:'Dziury muszą być połączone wodą (każda dziura musi stykać się z tą samą, spójną siecią wody).',
+    check:g=>{
+      const holes=of(g,'hole'); if(!holes.length) return {ok:false,bad:[]};
+      const comp=new Map(); let n=0;
+      of(g,'water').forEach(w=>{
+        if(comp.has(w)) return;
+        comp.set(w,n); const q=[w];
+        while(q.length) nb(g,q.pop()).forEach(i=>{
+          if(g.cells[i]==='water' && !comp.has(i)){comp.set(i,n); q.push(i);}
+        });
+        n++;
+      });
+      const touch=h=>new Set(nb(g,h).filter(i=>comp.has(i)).map(i=>comp.get(i)));
+      let best=-1, bestCount=0;
+      for(let c=0;c<n;c++){
+        const k=holes.filter(h=>touch(h).has(c)).length;
+        if(k>bestCount){bestCount=k; best=c;}
+      }
+      const bad=holes.filter(h=>best<0 || !touch(h).has(best));
+      return {ok:!bad.length, bad, info:`${bestCount}/${holes.length}`};
+    } },
+
+  { text:'Postaw niebieski ogień na każdym piętrze poza najwyższym. Dla każdego z nich wynik mnożenia (rząd × kolumna × piętro) ma być taki sam (A=1, B=2...).',
+    unlock:'bluefire',
+    check:g=>{
+      const bf=of(g,'bluefire'), total=numFloorsOf(g);
+      if(!bf.length) return {ok:false,bad:[],info:`0/${total-1} pięter`};
+      const prod=i=>{const loc=localOf(g,i); return (loc%W+1)*(g.rows-Math.floor(loc/W))*(floorOf(g,i)+1);};
+      const counts={}; bf.forEach(i=>{const p=prod(i); counts[p]=(counts[p]||0)+1;});
+      const mode=Number(Object.keys(counts).reduce((a,b)=>counts[b]>counts[a]?b:a));
+      const bad=bf.filter(i=>prod(i)!==mode);
+      const covered=new Set(bf.map(floorOf.bind(null,g)).filter(f=>f>0)).size;
+      return {ok:!bad.length && covered===total-1, bad, info:`${covered}/${total-1} pięter`};
+    } },
+
+  { text:'Ilość wody na każdym piętrze musi być wielokrotnością numeru piętra (najwyższe piętro = 1).',
+    check:g=>{
+      const total=numFloorsOf(g), per=g.rows*W, bad=[], counts=[]; let ok=true;
+      for(let f=0;f<total;f++){
+        const ws=[...Array(per).keys()].map(l=>f*per+l).filter(i=>g.cells[i]==='water');
+        counts.push(ws.length);
+        if(ws.length % (f+1) !== 0){ok=false; bad.push(...ws);}
+      }
+      return {ok, bad, info:counts.join(' · ')};
+    } },
+
+  { text:'Postaw uniwersytet.', unlock:'university',
+    check:g=>({ok:of(g,'university').length>=1, bad:[]}) },
+
+  { text:'Liczba bloków w rzędzie, kolumnie i pionie uniwersytetu musi być taka sama i większa od zera (sam uniwersytet się nie liczy).',
+    check:g=>{
+      const us=of(g,'university'), total=numFloorsOf(g), per=g.rows*W, bad=[]; let info='';
+      us.forEach(u=>{
+        const loc=localOf(g,u), r=Math.floor(loc/W), c=loc%W, f=floorOf(g,u);
+        const isB=i=>i!==u && !!g.cells[i];
+        let v=0,h=0,z=0;
+        for(let rr=0;rr<g.rows;rr++) if(isB(f*per+rr*W+c)) v++;
+        for(let cc=0;cc<W;cc++)      if(isB(f*per+r*W+cc)) h++;
+        for(let ff=0;ff<total;ff++)  if(isB(ff*per+loc)) z++;
+        info=`${v} / ${h} / ${z}`;
+        if(!(v===h && h===z && v>0)) bad.push(u);
+      });
+      return {ok:us.length>0 && !bad.length, bad, info};
+    } },
+
+  { text:'Postaw domek maga. Uwaga: po jego postawieniu 2 losowe bloki zamieniają się miejscami.', unlock:'wizard',
+    check:g=>({ok:of(g,'wizard').length>=1, bad:[]}) },
+
+  { text:'Na skos we wszystkich 3 wymiarach od co najmniej jednego domku maga musi znajdować się minimum 8 różnych rodzajów bloków.',
+    check:g=>{
+      const ws=of(g,'wizard'), total=numFloorsOf(g), per=g.rows*W;
+      const kinds=w=>{
+        const loc=localOf(g,w), r=Math.floor(loc/W), c=loc%W, f=floorOf(g,w), set=new Set();
+        for(const dr of [-1,1]) for(const dc of [-1,1]) for(const df of [-1,1]){
+          let rr=r+dr, cc=c+dc, ff=f+df;
+          while(rr>=0 && rr<g.rows && cc>=0 && cc<W && ff>=0 && ff<total){
+            const t=g.cells[ff*per+rr*W+cc]; if(t) set.add(t);
+            rr+=dr; cc+=dc; ff+=df;
+          }
+        }
+        return set.size;
+      };
+      const best=ws.length ? Math.max(...ws.map(kinds)) : 0;
+      return {ok:best>=8, bad:[], info: ws.length ? `${best}/8` : ''};
     } },
 ];
 
@@ -315,8 +409,18 @@ function update(){
     numFloors = FLOORS; cells = cells.concat(Array(rows*W*(FLOORS-1)).fill(null));
   }
   const fresh = unlocked().filter(t=>!before.includes(t));
-  if(fresh.length) notice = 'Odblokowano: ' + fresh.map(t=>TOOLS[t].e+' '+TOOLS[t].n).join(', ');
+  if(fresh.length) notice = (notice ? notice+' · ' : '') + 'Odblokowano: ' + fresh.map(t=>TOOLS[t].e+' '+TOOLS[t].n).join(', ');
   render();
+}
+
+function wizardSwap(idx){
+  const filled = cells.flatMap((t,i)=> t && i!==idx ? [i] : []);
+  if(new Set(filled.map(i=>cells[i])).size < 2) return null;
+  const a = filled[Math.floor(Math.random()*filled.length)];
+  const others = filled.filter(i=>cells[i]!==cells[a]);
+  const b = others[Math.floor(Math.random()*others.length)];
+  [cells[a], cells[b]] = [cells[b], cells[a]];
+  return [a,b];
 }
 
 function changeFloor(delta){
@@ -340,7 +444,7 @@ function render(){
   const tools = document.getElementById('tools'); tools.innerHTML = '';
   unlocked().forEach(t=>{
     const b = document.createElement('button');
-    b.className = 'tool'; b.textContent = TOOLS[t].e+' '+TOOLS[t].n;
+    b.className = 'tool'; b.innerHTML = icon(t)+' '+TOOLS[t].n;
     b.setAttribute('aria-pressed', tool===t);
     b.onclick = ()=>{ tool = tool===t ? null : t; notice=''; render(); };
     tools.appendChild(b);
@@ -360,11 +464,49 @@ function render(){
     const i = floorBase + loc;
     const t = cells[i];
     const b = document.createElement('button');
-    b.className = 'cell' + (t?' '+t:'') + (bad.has(i)?' bad':'') + (i===pop?' pop':'');
-    b.textContent = t ? TOOLS[t].e : '';
+    b.className = 'cell' + (t?' '+t:'') + (bad.has(i)?' bad':'') + (pop&&pop.includes(i)?' pop':'');
+    b.innerHTML = t ? icon(t) : '';
     const r=Math.floor(loc/W)+1, c=loc%W+1;
     b.setAttribute('aria-label', `Piętro ${floor+1}, kratka ${r}, ${c}` + (t?': '+TOOLS[t].n:''));
-    b.onclick = ()=>{ cells[i] = tool; pop = tool ? i : null; notice=''; update(); };
+    b.onclick = ()=>{
+      const prev = cells[i];
+      cells[i] = tool; pop = tool ? [i] : null; notice='';
+      if(tool && prev!==tool){
+        if(tool==='torch' || tool==='bluefire'){      // ogień wywołuje pożar łańcuchowy
+          const flammable = ['hut', 'grain', 'monastery', 'stable'];
+          const g = grid();
+          const burned = new Set();
+          const q = nb(g, i).filter(j => flammable.includes(cells[j]));
+          
+          while(q.length) {
+            const curr = q.pop();
+            if(!burned.has(curr)) {
+              burned.add(curr);
+              nb(g, curr).forEach(n => {
+                if(flammable.includes(cells[n]) && !burned.has(n)) {
+                  q.push(n);
+                }
+              });
+            }
+          }
+
+          if(burned.size > 0){
+            burned.forEach(j => cells[j] = tool);
+            pop.push(...burned);
+            notice = `${TOOLS[tool].e} Pożar! ${TOOLS[tool].n} spalił łącznie obiektów: ${burned.size}`;
+          }
+        }
+        if(tool==='wizard'){                      // mag miesza 2 losowe bloki
+          const sw = wizardSwap(i);
+          if(sw){
+            pop.push(...sw);
+            const g2=grid(), d=j=>`${TOOLS[cells[j]].e} (piętro ${floorOf(g2,j)+1})`;
+            notice = `${TOOLS.wizard.e} Mag zamienił miejscami ${d(sw[0])} i ${d(sw[1])}`;
+          }
+        }
+      }
+      update();
+    };
     board.appendChild(b);
   }
 
@@ -399,7 +541,7 @@ function render(){
       const t = cells[base+loc];
       const d = document.createElement('div');
       d.className = 'ghost-cell' + (t?' '+t:'');
-      d.textContent = t ? TOOLS[t].e : '';
+      d.innerHTML = t ? icon(t) : '';
       el.appendChild(d);
     }
   };
