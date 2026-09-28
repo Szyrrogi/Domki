@@ -156,7 +156,7 @@ const RULES = [
       return {ok:!bad.length, bad};
     } },
 
-  { text:'Chatki muszą tworzyć sieć połączoną skokami szachowego skoczka (w kształcie litery L) – z każdej musisz móc dotrzeć do pozostałych. Skok to przesunięcie o 2 pola w jednym wymiarze, o 1 w drugim i o 0 w trzecim, w dowolnej kolejności wymiarów (także między piętrami).',
+  { text:'Chatki muszą tworzyć sieć połączoną skokami szachowego skoczka (w kształcie litery L) – z każdej musisz móc dotrzeć do pozostałych.',
     unlock:'stone',
     check:g=>{
       const hs=of(g,'hut'); if(!hs.length) return {ok:false,bad:[]};
@@ -218,7 +218,7 @@ const RULES = [
       return {ok:!bad.length, bad};
     } },
 
-  { text:'Żaden klasztor nie może znajdować się na krawędzi planszy (ani na najwyższym/najniższym piętrze, gdy piętra już istnieją).',
+  { text:'Żaden klasztor nie może znajdować się na krawędzi planszy.',
     check:g=>{
       const ks=of(g,'monastery');
       const total=numFloorsOf(g);
@@ -295,7 +295,7 @@ const RULES = [
       return {ok, bad: ok ? [] : holes, info: ok ? 'Max' : 'Za blisko'};
     } },
 
-  { text:'Fkdwhn pxvl ebć grnłdgqlh r slęć zlęfhm qlż vwdmql. (Szyfr Cezara. Klucz 3)',
+  { text:'Fkdwhn pxvl ebf grnodgqlh r slhf zlhfhm qlc vwdmql. (Szyfr Cezara. Klucz 3)',
     check:g=>{
       const h=of(g,'hut').length, s=of(g,'stable').length;
       return {ok: h===s+5, bad:[], info:`${TOOLS.hut.e} ${h} · ${TOOLS.stable.e} ${s}`};
@@ -368,7 +368,7 @@ const RULES = [
   { text:'Postaw domek maga. Uwaga: po jego postawieniu 2 losowe bloki zamieniają się miejscami.', unlock:'wizard',
     check:g=>({ok:of(g,'wizard').length>=1, bad:[]}) },
 
-  { text:'Na skos we wszystkich 3 wymiarach od co najmniej jednego domku maga musi znajdować się minimum 8 różnych rodzajów bloków.',
+  { text:'Na skos we wszystkich 3 wymiarach od co najmniej jednego domku maga musi znajdować się minimum 10 różnych rodzajów bloków.',
     check:g=>{
       const ws=of(g,'wizard'), total=numFloorsOf(g), per=g.rows*W;
       const kinds=w=>{
@@ -383,7 +383,26 @@ const RULES = [
         return set.size;
       };
       const best=ws.length ? Math.max(...ws.map(kinds)) : 0;
-      return {ok:best>=8, bad:[], info: ws.length ? `${best}/8` : ''};
+      return {ok:best>=10, bad:[], info: ws.length ? `${best}/10` : ''};
+    } },
+
+    { text:'Zbuduj wieżę maga, układając domki maga jeden na drugim, na tych samych współrzędnych, przez całą wysokość planszy.',
+    check:g=>{
+      const total = numFloorsOf(g);
+      const per = g.rows * W;
+      let maxStack = 0;
+      
+      // Sprawdzamy każde z pól 2D na planszy (0 do 63)
+      for(let loc = 0; loc < per; loc++) {
+         let stack = 0;
+         for(let f = 0; f < total; f++) {
+            if(g.cells[f * per + loc] === 'wizard') stack++;
+         }
+         if(stack > maxStack) {
+             maxStack = stack;
+         }
+      }
+      return {ok: maxStack === total && total > 1, bad: [], info: `${maxStack}/${total}`};
     } },
 ];
 
