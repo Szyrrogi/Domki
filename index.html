@@ -9,9 +9,14 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div class="lang-switch" id="langSwitch">
+  <button type="button" data-lang="pl">PL</button>
+  <button type="button" data-lang="en">EN</button>
+  <button type="button" data-lang="es">ES</button>
+</div>
 <main>
-  <h1>Gra w domki</h1>
-  <p class="sub">Buduj tak, żeby spełnić wszystkie zasady. Nowe pojawiają się, gdy poprzednie są spełnione.</p>
+  <h1 id="title">Gra w domki</h1>
+  <p class="sub" id="subtitle">Buduj tak, żeby spełnić wszystkie zasady. Nowe pojawiają się, gdy poprzednie są spełnione.</p>
 
   <section>
     <div class="tools" id="tools"></div>
@@ -20,6 +25,11 @@
       <button id="floorUp" type="button" title="Piętro wyżej">⬆</button>
       <span id="floorLabel"></span>
       <button id="floorDown" type="button" title="Piętro niżej">⬇</button>
+    </div>
+    <div class="floor-nav" id="sphereNav" style="display:none">
+      <button id="sphereDown" type="button" title="Sfera w lewo">◀</button>
+      <span id="sphereLabel"></span>
+      <button id="sphereUp" type="button" title="Sfera w prawo">▶</button>
     </div>
     <div class="board-wrap">
       <div class="ghost-board above" id="ghostAbove"></div>
@@ -34,6 +44,7 @@
   </section>
 
   <section>
+    <p class="progress" id="progress"></p>
     <ol class="rules" id="rules"></ol>
     <div id="win"></div>
   </section>
@@ -43,23 +54,94 @@
 /* ====== KONFIGURACJA ====== */
 const W = 8;               
 const FLOORS = 5;          
+const SPHERES = 5;         
 const MONASTERY_MIN_DIST = 2.2;   
 const TOOLS = {
-  hut:       {e:'🛖', n:'Chatka'},
-  monastery: {e:'⛪', n:'Klasztor'},
-  grain:     {e:'🌾', n:'Zboże'},
-  water:     {e:'💧', n:'Woda'},
-  stone:     {e:'🪨', n:'Kamień'},
-  stable:    {e:'🐴', n:'Stajnia'},
-  well:      {e:'⛲', n:'Studnia'},
-  torch:     {e:'🔥', n:'Pochodnia'},
-  hole:      {e:'🕳️', n:'Dziura'},
-  bluefire:  {e:'🔥', n:'Niebieski ogień'},
-  university:{e:'🏛️', n:'Uniwersytet'},
-  wizard:    {e:'🧙', n:'Domek maga'},
+  hut:       {e:'🛖'},
+  monastery: {e:'⛪'},
+  grain:     {e:'🌾'},
+  water:     {e:'💧'},
+  stone:     {e:'🪨'},
+  stable:    {e:'🐴'},
+  well:      {e:'⛲'},
+  torch:     {e:'🔥'},
+  hole:      {e:'🕳️'},
+  bluefire:  {e:'🔥'},
+  university:{e:'🏛️'},
+  wizard:    {e:'🧙'},
+  monument:  {e:'🗿'},
 };
-const BUILDINGS = ['hut','monastery','stable','well','university','wizard'];
 const icon = t => t==='bluefire' ? '<span class="bf">🔥</span>' : TOOLS[t].e;
+
+/* ====== JĘZYKI ====== */
+let lang = (navigator.language||navigator.userLanguage||'').toLowerCase().startsWith('pl') ? 'pl' : 'en';
+
+const TOOL_NAMES = {
+  pl:{hut:'Chatka',monastery:'Klasztor',grain:'Zboże',water:'Woda',stone:'Kamień',stable:'Stajnia',well:'Studnia',torch:'Pochodnia',hole:'Dziura',bluefire:'Niebieski ogień',university:'Uniwersytet',wizard:'Domek maga',monument:'Pomnik'},
+  en:{hut:'Hut',monastery:'Monastery',grain:'Grain',water:'Water',stone:'Stone',stable:'Stable',well:'Well',torch:'Torch',hole:'Hole',bluefire:'Blue fire',university:'University',wizard:'Wizard hut',monument:'Monument'},
+  es:{hut:'Choza',monastery:'Monasterio',grain:'Grano',water:'Agua',stone:'Piedra',stable:'Establo',well:'Pozo',torch:'Antorcha',hole:'Agujero',bluefire:'Fuego azul',university:'Universidad',wizard:'Choza del mago',monument:'Monumento'},
+};
+const TN = t => TOOL_NAMES[lang][t];
+
+const T = {
+  pl:{
+    max:'Max', tooClose:'Za blisko', groups:'grup: ', huts:'chatek', floorsWord:'pięter', spheresWord:'sfer',
+    title:'Gra w domki',
+    subtitle:'Buduj tak, żeby spełnić wszystkie zasady. Nowe pojawiają się, gdy poprzednie są spełnione.',
+    reset:'Zacznij od nowa', erase:'🗑️ Usuń',
+    statusTool:n=>`Zaznaczone: ${n}. Klik na kratkę stawia bloczek.`,
+    statusErase:'Gumka: klik na kratkę usuwa bloczek.',
+    floorUpTitle:'Piętro wyżej', floorDownTitle:'Piętro niżej',
+    floorTop:'Najwyższe piętro', floorBottom:'Najniższe piętro',
+    floorMid:(n,t)=>`Piętro ${n} z ${t}`,
+    sphereLeftTitle:'Sfera w lewo', sphereRightTitle:'Sfera w prawo',
+    sphereLabel:(n,t)=>`Sfera ${n} z ${t}`,
+    fire:(ic,nm,n)=>`${ic} Pożar! ${nm} spalił łącznie obiektów: ${n}`,
+    unlocked:'Odblokowano: ',
+    win:'Wszystkie zasady spełnione! Kolejne wkrótce.',
+    resetConfirm:'Na pewno zacząć od nowa? Cała plansza zostanie wyczyszczona.',
+    cellLabel:(f,r,c)=>`Piętro ${f}, kratka ${r}, ${c}`,
+    progress:(done,total)=>`Postęp: ${done} / ${total}`,
+  },
+  en:{
+    max:'Max', tooClose:'Too close', groups:'groups: ', huts:'huts', floorsWord:'floors', spheresWord:'spheres',
+    title:'The House Game',
+    subtitle:'Build so that all the rules are satisfied. New ones appear once the earlier ones are met.',
+    reset:'Start over', erase:'🗑️ Erase',
+    statusTool:n=>`Selected: ${n}. Click a tile to place it.`,
+    statusErase:'Eraser: click a tile to remove it.',
+    floorUpTitle:'Floor up', floorDownTitle:'Floor down',
+    floorTop:'Top floor', floorBottom:'Bottom floor',
+    floorMid:(n,t)=>`Floor ${n} of ${t}`,
+    sphereLeftTitle:'Sphere left', sphereRightTitle:'Sphere right',
+    sphereLabel:(n,t)=>`Sphere ${n} of ${t}`,
+    fire:(ic,nm,n)=>`${ic} Fire! ${nm} burned a total of ${n} objects`,
+    unlocked:'Unlocked: ',
+    win:'All rules satisfied! More coming soon.',
+    resetConfirm:'Start over for real? The whole board will be cleared.',
+    cellLabel:(f,r,c)=>`Floor ${f}, tile ${r}, ${c}`,
+    progress:(done,total)=>`Progress: ${done} / ${total}`,
+  },
+  es:{
+    max:'Máx', tooClose:'Demasiado cerca', groups:'grupos: ', huts:'chozas', floorsWord:'pisos', spheresWord:'esferas',
+    title:'El juego de las casitas',
+    subtitle:'Construye para cumplir todas las reglas. Aparecen nuevas cuando se cumplen las anteriores.',
+    reset:'Empezar de nuevo', erase:'🗑️ Borrar',
+    statusTool:n=>`Seleccionado: ${n}. Toca una casilla para colocarlo.`,
+    statusErase:'Borrador: toca una casilla para quitarlo.',
+    floorUpTitle:'Piso arriba', floorDownTitle:'Piso abajo',
+    floorTop:'Piso más alto', floorBottom:'Piso más bajo',
+    floorMid:(n,t)=>`Piso ${n} de ${t}`,
+    sphereLeftTitle:'Esfera a la izquierda', sphereRightTitle:'Esfera a la derecha',
+    sphereLabel:(n,t)=>`Esfera ${n} de ${t}`,
+    fire:(ic,nm,n)=>`${ic} ¡Incendio! ${nm} quemó en total ${n} objetos`,
+    unlocked:'Desbloqueado: ',
+    win:'¡Todas las reglas cumplidas! Pronto habrá más.',
+    resetConfirm:'¿Seguro que quieres empezar de nuevo? Se borrará todo el tablero.',
+    cellLabel:(f,r,c)=>`Piso ${f}, casilla ${r}, ${c}`,
+    progress:(done,total)=>`Progreso: ${done} / ${total}`,
+  },
+};
 
 const DIGITS = {
   0:['111','101','101','101','111'], 1:['010','010','010','010','010'],
@@ -113,13 +195,17 @@ const square = (g,s) => (g.rows - Number(s[1])) * W + (s.charCodeAt(0) - 97);
 
 /* ====== ZASADY ====== */
 const RULES = [
-  { text:'Postaw co najmniej 2 chatki.',
+  { text:{pl:'Postaw co najmniej 2 chatki.', en:'Place at least 2 huts.', es:'Coloca al menos 2 chozas.'},
     check:g=>{const n=of(g,'hut').length; return {ok:n>=2, bad:[], info:n+'/2'};} },
 
-  { text:'Postaw klasztor.', unlock:'monastery',
+  { text:{pl:'Postaw klasztor.', en:'Place a monastery.', es:'Coloca un monasterio.'}, unlock:'monastery',
     check:g=>({ok:of(g,'monastery').length>=1, bad:[]}) },
 
-  { text:`Klasztor musi być oddalony o minimum ${MONASTERY_MIN_DIST} pola od każdego innego bloku.`,
+  { text:{
+      pl:`Klasztor musi być oddalony o minimum ${MONASTERY_MIN_DIST} pola od każdego innego bloku.`,
+      en:`The monastery must be at least ${MONASTERY_MIN_DIST} tiles away from every other block.`,
+      es:`El monasterio debe estar al menos a ${MONASTERY_MIN_DIST} casillas de cualquier otro bloque.`,
+    },
     check:g=>{
       const ks=of(g,'monastery'), bad=[];
       ks.forEach(k=>g.cells.forEach((t,b)=>{      
@@ -128,24 +214,33 @@ const RULES = [
       return {ok:ks.length>0 && !bad.length, bad};
     } },
 
-  { text:'Połóż 3 zboża.', unlock:'grain',
+  { text:{pl:'Połóż 3 zboża.', en:'Place 3 grain.', es:'Coloca 3 granos.'}, unlock:'grain',
     check:g=>{const n=of(g,'grain').length; return {ok:n>=3, bad:[], info:n+'/3'};} },
 
-  { text:'Każde zboże musi sąsiadować z dokładnie jedną chatką.',
+  { text:{
+      pl:'Każde zboże musi sąsiadować z dokładnie jedną chatką.',
+      en:'Each grain tile must be adjacent to exactly one hut.',
+      es:'Cada grano debe estar junto a exactamente una choza.',
+    },
     check:g=>{
       const fs=of(g,'grain');
       const bad=fs.filter(f=>nb(g,f).filter(i=>g.cells[i]==='hut').length!==1);
       return {ok:fs.length>0 && !bad.length, bad};
     } },
 
-  { text:'Każda chatka musi stykać się z wodą.', unlock:'water', expand:true,
+  { text:{pl:'Każda chatka musi stykać się z wodą.', en:'Every hut must touch water.', es:'Cada choza debe tocar el agua.'},
+    unlock:'water', expand:true,
     check:g=>{
       const hs=of(g,'hut');
       const bad=hs.filter(h=>!nb(g,h).some(i=>g.cells[i]==='water'));
       return {ok:hs.length>0 && !bad.length, bad};
     } },
 
-  { text:'Wszystkie wody muszą być ze sobą połączone.',
+  { text:{
+      pl:'Wszystkie wody muszą być ze sobą połączone.',
+      en:'All water tiles must be connected to each other.',
+      es:'Toda el agua debe estar conectada entre sí.',
+    },
     check:g=>{
       const ws=of(g,'water'); if(!ws.length) return {ok:false,bad:[]};
       const seen=new Set([ws[0]]), q=[ws[0]];
@@ -156,7 +251,11 @@ const RULES = [
       return {ok:!bad.length, bad};
     } },
 
-  { text:'Chatki muszą tworzyć sieć połączoną skokami szachowego skoczka (w kształcie litery L) – z każdej musisz móc dotrzeć do pozostałych.',
+  { text:{
+      pl:'Chatki muszą tworzyć sieć połączoną skokami szachowego skoczka (w kształcie litery L) – z każdej musisz móc dotrzeć do pozostałych. Skok to przesunięcie o 2 pola w jednym wymiarze, o 1 w drugim i o 0 w trzecim, w dowolnej kolejności wymiarów (także między piętrami).',
+      en:'The huts must form a network connected by chess-knight jumps (L-shaped) – from every hut you must be able to reach all the others. A jump is a move of 2 tiles in one dimension, 1 in another and 0 in the third, in any order of dimensions (also between floors).',
+      es:'Las chozas deben formar una red conectada por saltos de caballo de ajedrez (en forma de L): desde cada una debes poder llegar a todas las demás. Un salto es un desplazamiento de 2 casillas en una dimensión, 1 en otra y 0 en la tercera, en cualquier orden de dimensiones (también entre pisos).',
+    },
     unlock:'stone',
     check:g=>{
       const hs=of(g,'hut'); if(!hs.length) return {ok:false,bad:[]};
@@ -176,10 +275,14 @@ const RULES = [
       });
       const main=comps.reduce((a,b)=>b.length>a.length?b:a);
       const bad=hs.filter(h=>!main.includes(h));
-      return {ok:!bad.length, bad, info:comps.length>1 ? 'grup: '+comps.length : ''};
+      return {ok:!bad.length, bad, info:comps.length>1 ? T[lang].groups+comps.length : ''};
     } },
 
-  { text:()=>`Ułóż z kamieni w siatce 3x5 pól ostatnią cyfrę z samej godziny, pomijając minuty (np. dla czasu 14:35 ułóż cyfrę 4).`,
+  { text:{
+      pl:'Ułóż z kamieni w siatce 3x5 pól ostatnią cyfrę z samej godziny, pomijając minuty (np. dla czasu 14:35 ułóż cyfrę 4).',
+      en:'Arrange stones in a 3×5 grid to form the last digit of the current hour, ignoring the minutes (e.g. for 14:35, build the digit 4).',
+      es:'Forma con piedras, en una cuadrícula de 3×5, el último dígito de la hora actual, sin contar los minutos (por ejemplo, para las 14:35 dibuja el dígito 4).',
+    },
     check:g=>{
       const digit = new Date().getHours()%10;
       const st = of(g,'stone');
@@ -195,22 +298,26 @@ const RULES = [
       return {ok:false, bad:[], info:`${best}/${want}`};
     } },
 
-  { text:'Chatek musi być tyle samo co zbóż.',
+  { text:{pl:'Chatek musi być tyle samo co zbóż.', en:'There must be exactly as many huts as grain tiles.', es:'Debe haber la misma cantidad de chozas que de granos.'},
     check:g=>{
       const h=of(g,'hut').length, z=of(g,'grain').length;
       return {ok:h>0 && h===z, bad:[], info:`${TOOLS.hut.e} ${h} · ${TOOLS.grain.e} ${z}`};
     } },
 
-  { text:'Liczba chatek musi być dzielnikiem liczby 392392.',
+  { text:{pl:'Liczba chatek musi być dzielnikiem liczby 392392.', en:'The number of huts must be a divisor of 392392.', es:'El número de chozas debe ser un divisor de 392392.'},
     check:g=>{
       const h=of(g,'hut').length;
-      return {ok:h>0 && 392392 % h === 0, bad:[], info:`${h} chatek`};
+      return {ok:h>0 && 392392 % h === 0, bad:[], info:`${h} ${T[lang].huts}`};
     } },
 
-  { text:'Postaw stajnię.', unlock:'stable',
+  { text:{pl:'Postaw stajnię.', en:'Place a stable.', es:'Coloca un establo.'}, unlock:'stable',
     check:g=>({ok:of(g,'stable').length>=1, bad:[]}) },
 
-  { text:'Odległość między każdą stajnią a najbliższą chatką musi być mniejsza niż 2,5 pola.',
+  { text:{
+      pl:'Odległość między każdą stajnią a najbliższą chatką musi być mniejsza niż 2,5 pola.',
+      en:'The distance between every stable and its nearest hut must be less than 2.5 tiles.',
+      es:'La distancia entre cada establo y la choza más cercana debe ser menor que 2,5 casillas.',
+    },
     check:g=>{
       const st=of(g,'stable'), hs=of(g,'hut');
       if(!st.length || !hs.length) return {ok:false, bad:[]};
@@ -218,20 +325,36 @@ const RULES = [
       return {ok:!bad.length, bad};
     } },
 
-  { text:'Żaden klasztor nie może znajdować się na krawędzi planszy.',
+  { text:{
+      pl:'Żaden klasztor nie może znajdować się na krawędzi planszy.',
+      en:'No monastery may be located on the edge of the board.',
+      es:'Ningún monasterio puede estar en el borde del tablero.',
+    },
     check:g=>{
-      const ks=of(g,'monastery');
-      const total=numFloorsOf(g);
-      const edge=i=>{
-        const loc=localOf(g,i), r=Math.floor(loc/W), c=loc%W, fl=floorOf(g,i);
+      const total=numFloorsOf(g), per=g.rows*W;
+      const isEdge=(loc,fl,s)=>{
+        const r=Math.floor(loc/W), c=loc%W;
         const zEdge = total>1 && (fl===0 || fl===total-1);
-        return r===0||c===0||r===g.rows-1||c===W-1||zEdge;
+        const sEdge = spheresOn && (s===0 || s===SPHERES-1);
+        return r===0||c===0||r===g.rows-1||c===W-1||zEdge||sEdge;
       };
-      const bad=ks.filter(edge);
-      return {ok:ks.length>0 && !bad.length, bad};
+      let count=0, anyBad=false, bad=[];
+      allCells.forEach((arr,s)=>{
+        arr.forEach((t,i)=>{
+          if(t!=='monastery') return;
+          count++;
+          const loc=i%per, fl=Math.floor(i/per);
+          if(isEdge(loc,fl,s)){ anyBad=true; if(s===sphere) bad.push(i); }
+        });
+      });
+      return {ok:count>0 && !anyBad, bad};
     } },
 
-  { text:'Przynamniej jedna studnia musi bezpośrednio sąsiadować (wliczając skosy) z co najmniej 6 różnymi rodzajami bloków.',
+  { text:{
+      pl:'Przynamniej jedna studnia musi bezpośrednio sąsiadować (wliczając skosy) z co najmniej 6 różnymi rodzajami bloków.',
+      en:'At least one well must be directly adjacent (including diagonals) to at least 6 different kinds of blocks.',
+      es:'Al menos un pozo debe estar directamente junto (incluidas las diagonales) a al menos 6 tipos diferentes de bloques.',
+    },
     unlock:'well',
     check:g=>{
       const ws=of(g,'well');
@@ -241,7 +364,11 @@ const RULES = [
       return {ok, bad:[], info: ws.length ? `${best}/6` : ''};
     } },
 
-  { text:'Odległość między każdą stajnią a chatką musi być większa niż 2 pola.',
+  { text:{
+      pl:'Odległość między każdą stajnią a chatką musi być większa niż 2 pola.',
+      en:'The distance between every stable and every hut must be greater than 2 tiles.',
+      es:'La distancia entre cada establo y cada choza debe ser mayor que 2 casillas.',
+    },
     check:g=>{
       const st=of(g,'stable'), hs=of(g,'hut');
       if(!st.length || !hs.length) return {ok:false, bad:[]};
@@ -249,7 +376,11 @@ const RULES = [
       return {ok:!bad.length, bad};
     } },
 
-  { text:'Zapisz w dolnym rzędzie liczbę zbóż, używając chatek jako kodu binarnego (chatka = 1, brak chatki = 0).',
+  { text:{
+      pl:'Zapisz w dolnym rzędzie liczbę zbóż, używając chatek jako kodu binarnego (chatka = 1, brak chatki = 0).',
+      en:'Encode the number of grain tiles in the bottom row using huts as binary code (hut = 1, no hut = 0).',
+      es:'Codifica en la fila inferior el número de granos usando chozas como código binario (choza = 1, sin choza = 0).',
+    },
     check:g=>{
       const grain = of(g,'grain').length;
       const rowStart = (g.rows-1)*W;
@@ -258,19 +389,36 @@ const RULES = [
       return {ok: grain>0 && value===grain, bad:[], info:`${value} / ${grain}`};
     } },
 
-  { text:'Umieść wodę na czterech polach zgodnie z początkiem piosenki https://youtu.be/Fy-k60iEpb4', unlock:'torch',
+  { text:{
+      pl:'Umieść wodę na czterech polach zgodnie z początkiem piosenki https://youtu.be/Fy-k60iEpb4',
+      en:'Place water on four tiles matching the start of the song https://youtu.be/Fy-k60iEpb4',
+      es:'Coloca agua en cuatro casillas según el inicio de la canción https://youtu.be/Fy-k60iEpb4',
+    },
+    unlock:'torch',
     check:g=>{
       const need=['e4','c6','d4','d5'].map(s=>square(g,s));
       return {ok: need.every(i=>g.cells[i]==='water'), bad:[]};
     } },
 
-  { text:'Postaw pochodnię. Uwaga: ogień może podpalić sąsiadujące budynki i zboża!',
+  { text:{
+      pl:'Postaw pochodnię. Uwaga: ogień może podpalić sąsiadujące budynki i zboża!',
+      en:'Place a torch. Careful: fire can set nearby buildings and grain ablaze!',
+      es:'Coloca una antorcha. ¡Cuidado: el fuego puede incendiar los edificios y granos cercanos!',
+    },
     check:g=>({ok:of(g,'torch').length>=1, bad:[]}) },
 
-  { text:'Liczba kamieni ma być równa liczbie starców a liczba pochodni liczbie lamp ognistych (zgodnie z Apokalipsą św. Jana 4,4).',
+  { text:{
+      pl:'Liczba kamieni ma być równa liczbie starców a liczba pochodni liczbie lamp ognistych (zgodnie z Apokalipsą św. Jana 4,4).',
+      en:'The number of stones must equal the number of elders, and the number of torches the number of fiery lamps (according to Revelation 4:4).',
+      es:'El número de piedras debe igualar al número de ancianos, y el número de antorchas al de lámparas de fuego (según Apocalipsis 4:4).',
+    },
     check:g=>({ok: of(g,'stone').length===24 && of(g,'torch').length===7, bad:[]}) },
 
-  { text:`Pod każdą studnią, na piętrze niżej, musi być woda.`,
+  { text:{
+      pl:'Pod każdą studnią, na piętrze niżej, musi być woda.',
+      en:'Beneath every well, on the floor below, there must be water.',
+      es:'Debajo de cada pozo, en el piso de abajo, debe haber agua.',
+    },
     floors:true,
     check:g=>{
       const totalFloors = g.cells.length / (g.rows*W);
@@ -284,23 +432,48 @@ const RULES = [
       return {ok: ws.length>0 && !bad.length, bad};
     } },
 
-  { text:'Postaw dokładnie dwie dziury, umieszczając je skrajnie najdalej od siebie jak to tylko możliwe.',
+  { text:{
+      pl:'Postaw dokładnie dwie dziury, umieszczając je skrajnie najdalej od siebie jak to tylko możliwe.',
+      en:'Place exactly two holes, positioning them as far apart from each other as possible.',
+      es:'Coloca exactamente dos agujeros, situándolos lo más lejos posible el uno del otro.',
+    },
     unlock:'hole',
     check:g=>{
-      const holes = of(g, 'hole');
-      if(holes.length !== 2) return {ok: false, bad: holes.length > 2 ? holes : [], info: `${holes.length}/2`};
-      const d = dist(g, holes[0], holes[1]);
-      const maxD = Math.hypot(g.rows - 1, W - 1, numFloorsOf(g) - 1);
-      const ok = Math.abs(d - maxD) < 0.001;
-      return {ok, bad: ok ? [] : holes, info: ok ? 'Max' : 'Za blisko'};
+      const per=g.rows*W, total=numFloorsOf(g);
+      let holes=[];
+      allCells.forEach((arr,s)=>{ arr.forEach((t,i)=>{ if(t==='hole') holes.push({s,i}); }); });
+      if(holes.length !== 2){
+        const bad = holes.filter(h=>h.s===sphere).map(h=>h.i);
+        return {ok:false, bad: holes.length>2 ? bad : [], info: `${holes.length}/2`};
+      }
+      const locOf=h=>({r:Math.floor((h.i%per)/W), c:(h.i%per)%W, f:Math.floor(h.i/per)});
+      const A=locOf(holes[0]), B=locOf(holes[1]);
+      const d = spheresOn
+        ? Math.hypot(A.r-B.r, A.c-B.c, A.f-B.f, holes[0].s-holes[1].s)
+        : Math.hypot(A.r-B.r, A.c-B.c, A.f-B.f);
+      const maxD = spheresOn
+        ? Math.hypot(g.rows-1, W-1, total-1, SPHERES-1)
+        : Math.hypot(g.rows-1, W-1, total-1);
+      const ok = Math.abs(d-maxD) < 0.001;
+      const bad = ok ? [] : holes.filter(h=>h.s===sphere).map(h=>h.i);
+      return {ok, bad, info: ok ? T[lang].max : T[lang].tooClose};
     } },
 
-  { text:'Fkdwhn pxvl ebf grnodgqlh r slhf zlhfhm qlc vwdmql. (Szyfr Cezara. Klucz 3)',
+  { text:{
+      pl:'Fkdwhn pxvl ebf grnodgqlh r slhf zlhfhm qlc vwdmql. (Szyfr Cezara. Klucz 3)',
+      en:'Kxwv pxvw eh hadfwob ilyh pruh wkdq vwdeohv. (Caesar cipher. Key 3)',
+      es:'Odv fkrcdv ghehq vhu hadfwdphqwh flqfr pdv txh orv hvwdeorv. (Cifrado César. Clave 3)',
+    },
     check:g=>{
       const h=of(g,'hut').length, s=of(g,'stable').length;
       return {ok: h===s+5, bad:[], info:`${TOOLS.hut.e} ${h} · ${TOOLS.stable.e} ${s}`};
     } },
-  { text:'Dziury muszą być połączone wodą (każda dziura musi stykać się z tą samą, spójną siecią wody).',
+
+  { text:{
+      pl:'Dziury muszą być połączone wodą (każda dziura musi stykać się z tą samą, spójną siecią wody).',
+      en:'The holes must be connected by water (every hole must touch the same, single connected body of water).',
+      es:'Los agujeros deben estar conectados por agua (cada agujero debe tocar la misma red de agua conectada).',
+    },
     check:g=>{
       const holes=of(g,'hole'); if(!holes.length) return {ok:false,bad:[]};
       const comp=new Map(); let n=0;
@@ -322,20 +495,28 @@ const RULES = [
       return {ok:!bad.length, bad, info:`${bestCount}/${holes.length}`};
     } },
 
-  { text:'Postaw niebieski ogień na każdym piętrze poza najwyższym. Dla każdego z nich wynik mnożenia (rząd × kolumna × piętro) ma być taki sam (A=1, B=2...).',
+  { text:{
+      pl:'Postaw niebieski ogień na każdym piętrze poza najwyższym. Dla każdego z nich wynik mnożenia (rząd × kolumna × piętro) ma być taki sam (A=1, B=2...).',
+      en:'Place blue fire on every floor except the top one. For each of them, the product (row × column × floor) must be the same (A=1, B=2…).',
+      es:'Coloca fuego azul en cada piso excepto el más alto. Para cada uno, el producto (fila × columna × piso) debe ser el mismo (A=1, B=2…).',
+    },
     unlock:'bluefire',
     check:g=>{
       const bf=of(g,'bluefire'), total=numFloorsOf(g);
-      if(!bf.length) return {ok:false,bad:[],info:`0/${total-1} pięter`};
+      if(!bf.length) return {ok:false,bad:[],info:`0/${total-1} ${T[lang].floorsWord}`};
       const prod=i=>{const loc=localOf(g,i); return (loc%W+1)*(g.rows-Math.floor(loc/W))*(floorOf(g,i)+1);};
       const counts={}; bf.forEach(i=>{const p=prod(i); counts[p]=(counts[p]||0)+1;});
       const mode=Number(Object.keys(counts).reduce((a,b)=>counts[b]>counts[a]?b:a));
       const bad=bf.filter(i=>prod(i)!==mode);
       const covered=new Set(bf.map(floorOf.bind(null,g)).filter(f=>f>0)).size;
-      return {ok:!bad.length && covered===total-1, bad, info:`${covered}/${total-1} pięter`};
+      return {ok:!bad.length && covered===total-1, bad, info:`${covered}/${total-1} ${T[lang].floorsWord}`};
     } },
 
-  { text:'Ilość wody na każdym piętrze musi być wielokrotnością numeru piętra (najwyższe piętro = 1).',
+  { text:{
+      pl:'Ilość wody na każdym piętrze musi być wielokrotnością numeru piętra (najwyższe piętro = 1).',
+      en:'The amount of water on every floor must be a multiple of the floor number (top floor = 1).',
+      es:'La cantidad de agua en cada piso debe ser múltiplo del número de piso (el piso más alto = 1).',
+    },
     check:g=>{
       const total=numFloorsOf(g), per=g.rows*W, bad=[], counts=[]; let ok=true;
       for(let f=0;f<total;f++){
@@ -346,10 +527,14 @@ const RULES = [
       return {ok, bad, info:counts.join(' · ')};
     } },
 
-  { text:'Postaw uniwersytet.', unlock:'university',
+  { text:{pl:'Postaw uniwersytet.', en:'Place a university.', es:'Coloca una universidad.'}, unlock:'university',
     check:g=>({ok:of(g,'university').length>=1, bad:[]}) },
 
-  { text:'Liczba bloków w rzędzie, kolumnie i pionie uniwersytetu musi być taka sama i większa od zera (sam uniwersytet się nie liczy).',
+  { text:{
+      pl:'Liczba bloków w rzędzie, kolumnie i pionie uniwersytetu musi być taka sama i większa od zera (sam uniwersytet się nie liczy).',
+      en:'The number of blocks in the university row, column and vertical stack must be equal and greater than zero (the university itself does not count).',
+      es:'El número de bloques en la fila, la columna y la vertical de la universidad debe ser igual y mayor que cero (la propia universidad no cuenta).',
+    },
     check:g=>{
       const us=of(g,'university'), total=numFloorsOf(g), per=g.rows*W, bad=[]; let info='';
       us.forEach(u=>{
@@ -365,10 +550,19 @@ const RULES = [
       return {ok:us.length>0 && !bad.length, bad, info};
     } },
 
-  { text:'Postaw domek maga. Uwaga: po jego postawieniu 2 losowe bloki zamieniają się miejscami.', unlock:'wizard',
+  { text:{
+      pl:'Postaw domek maga. Uwaga: po jego postawieniu 2 losowe bloki zamieniają się miejscami.',
+      en:'Place a wizard hut. Careful: once placed, 2 random blocks swap places.',
+      es:'Coloca la choza del mago. Cuidado: al colocarla, 2 bloques al azar intercambian su lugar.',
+    },
+    unlock:'wizard',
     check:g=>({ok:of(g,'wizard').length>=1, bad:[]}) },
 
-  { text:'Na skos we wszystkich 3 wymiarach od co najmniej jednego domku maga musi znajdować się minimum 10 różnych rodzajów bloków.',
+  { text:{
+      pl:'Na skos we wszystkich 3 wymiarach od co najmniej jednego domku maga musi znajdować się minimum 10 różnych rodzajów bloków.',
+      en:'Diagonally across all 3 dimensions from at least one wizard hut there must be at least 10 different kinds of blocks.',
+      es:'En diagonal a través de las 3 dimensiones desde al menos una choza del mago debe haber al menos 10 tipos diferentes de bloques.',
+    },
     check:g=>{
       const ws=of(g,'wizard'), total=numFloorsOf(g), per=g.rows*W;
       const kinds=w=>{
@@ -386,7 +580,11 @@ const RULES = [
       return {ok:best>=10, bad:[], info: ws.length ? `${best}/10` : ''};
     } },
 
-    { text:'Zbuduj wieżę maga, układając domki maga jeden na drugim, na tych samych współrzędnych, przez całą wysokość planszy.',
+  { text:{
+      pl:'Zbuduj wieżę maga, układając domki maga jeden na drugim, na tych samych współrzędnych, przez całą wysokość planszy.',
+      en:'Build a wizard tower by stacking wizard huts directly on top of each other, at the same coordinates, through the whole height of the board.',
+      es:'Construye una torre del mago apilando chozas del mago una encima de otra, en las mismas coordenadas, a lo largo de toda la altura del tablero.',
+    },
     check:g=>{
       const total = numFloorsOf(g);
       const per = g.rows * W;
@@ -404,12 +602,33 @@ const RULES = [
       }
       return {ok: maxStack === total && total > 1, bad: [], info: `${maxStack}/${total}`};
     } },
+
+  { text:{
+      pl:'Postaw pomnik na piętrze 3 (później je zmienimy).',
+      en:'Place a monument on floor 3 (we will change this later).',
+      es:'Coloca un monumento en el piso 3 (más adelante lo cambiaremos).',
+    },
+    unlock:'monument',
+    check:g=>({ok: of(g,'monument').some(i=>floorOf(g,i)===2), bad:[]}) },
+
+  { text:{
+      pl:'Gratulacje, doszedłeś już tak daleko. To jeszcze na koniec jedna prosta rzecz – już czysta formalność, postaw stajnię w każdej sferze.',
+      en:'Congratulations, you have made it this far. Just one simple thing left – purely a formality – place a stable in every sphere.',
+      es:'Enhorabuena, has llegado muy lejos. Solo queda una cosa sencilla, pura formalidad: coloca un establo en cada esfera.',
+    },
+    spheres:true,
+    check:g=>{
+      const have = allCells.filter(arr=>arr.includes('stable')).length;
+      return {ok: have===SPHERES, bad:[], info:`${have}/${SPHERES} ${T[lang].spheresWord}`};
+    } },
 ];
 
 /* ====== STAN ====== */
-let cells, rows, numFloors, floor, stage, tool, notice, pop, newRule;
+let cells, rows, numFloors, floor, stage, tool, notice, pop, newRule, allCells, sphere, spheresOn;
 function init(){
-  cells = Array(W).fill(null); rows = 1; numFloors = 1; floor = 0; stage = 1; tool = 'hut'; notice = '';
+  allCells = Array.from({length:SPHERES}, ()=>Array(W).fill(null));
+  sphere = 0; cells = allCells[sphere]; spheresOn = false;
+  rows = 1; numFloors = 1; floor = 0; stage = 1; tool = 'hut'; notice = '';
   update();
 }
 const grid = () => ({cells, rows});
@@ -422,13 +641,18 @@ function update(){
   while(stage < RULES.length && revealed().every(r=>r.check(grid()).ok)) stage++;
   if(stage > s0) newRule = stage - 1;
   if(revealed().some(r=>r.expand) && rows === 1){
-    rows = W; cells = cells.concat(Array(W*(W-1)).fill(null));
+    rows = W;
+    allCells = allCells.map(arr=>arr.concat(Array(W*(W-1)).fill(null)));
+    cells = allCells[sphere];
   }
   if(revealed().some(r=>r.floors) && numFloors === 1){
-    numFloors = FLOORS; cells = cells.concat(Array(rows*W*(FLOORS-1)).fill(null));
+    numFloors = FLOORS;
+    allCells = allCells.map(arr=>arr.concat(Array(rows*W*(FLOORS-1)).fill(null)));
+    cells = allCells[sphere];
   }
+  spheresOn = revealed().some(r=>r.spheres);
   const fresh = unlocked().filter(t=>!before.includes(t));
-  if(fresh.length) notice = (notice ? notice+' · ' : '') + 'Odblokowano: ' + fresh.map(t=>TOOLS[t].e+' '+TOOLS[t].n).join(', ');
+  if(fresh.length) notice = (notice ? notice+' · ' : '') + T[lang].unlocked + fresh.map(t=>TOOLS[t].e+' '+TN(t)).join(', ');
   render();
 }
 
@@ -454,6 +678,27 @@ function changeFloor(delta){
   }, 140);
 }
 
+function changeSphere(delta){
+  const ns = sphere + delta;
+  if(ns<0 || ns>=SPHERES) return;
+  const boardEl = document.getElementById('board');
+  boardEl.classList.add('switching');
+  setTimeout(()=>{
+    sphere = ns;
+    cells = allCells[sphere];
+    render();
+    requestAnimationFrame(()=> document.getElementById('board').classList.remove('switching'));
+  }, 140);
+}
+
+function applyLangStatic(){
+  document.getElementById('title').textContent = T[lang].title;
+  document.getElementById('subtitle').textContent = T[lang].subtitle;
+  document.getElementById('reset').textContent = T[lang].reset;
+  document.querySelectorAll('#langSwitch button').forEach(b=> b.setAttribute('aria-pressed', b.dataset.lang===lang));
+  document.documentElement.lang = lang;
+}
+
 /* ====== WIDOK ====== */
 function render(){
   const g = grid();
@@ -463,19 +708,18 @@ function render(){
   const tools = document.getElementById('tools'); tools.innerHTML = '';
   unlocked().forEach(t=>{
     const b = document.createElement('button');
-    b.className = 'tool'; b.innerHTML = icon(t)+' '+TOOLS[t].n;
+    b.className = 'tool'; b.innerHTML = icon(t)+' '+TN(t);
     b.setAttribute('aria-pressed', tool===t);
     b.onclick = ()=>{ tool = tool===t ? null : t; notice=''; render(); };
     tools.appendChild(b);
   });
   const er = document.createElement('button');            
-  er.className = 'tool'; er.textContent = '🗑️ Usuń';
+  er.className = 'tool'; er.textContent = T[lang].erase;
   er.setAttribute('aria-pressed', tool===null);
   er.onclick = ()=>{ tool = null; notice=''; render(); };
   tools.appendChild(er);
   document.getElementById('status').textContent = notice ||
-    (tool ? `Zaznaczone: ${TOOLS[tool].n}. Klik na kratkę stawia bloczek.`
-          : 'Gumka: klik na kratkę usuwa bloczek.');
+    (tool ? T[lang].statusTool(TN(tool)) : T[lang].statusErase);
 
   const board = document.getElementById('board'); board.innerHTML = '';
   const floorBase = floor*rows*W;
@@ -486,7 +730,7 @@ function render(){
     b.className = 'cell' + (t?' '+t:'') + (bad.has(i)?' bad':'') + (pop&&pop.includes(i)?' pop':'');
     b.innerHTML = t ? icon(t) : '';
     const r=Math.floor(loc/W)+1, c=loc%W+1;
-    b.setAttribute('aria-label', `Piętro ${floor+1}, kratka ${r}, ${c}` + (t?': '+TOOLS[t].n:''));
+    b.setAttribute('aria-label', T[lang].cellLabel(floor+1, r, c) + (t?': '+TN(t):''));
     b.onclick = ()=>{
       const prev = cells[i];
       cells[i] = tool; pop = tool ? [i] : null; notice='';
@@ -512,16 +756,12 @@ function render(){
           if(burned.size > 0){
             burned.forEach(j => cells[j] = tool);
             pop.push(...burned);
-            notice = `${TOOLS[tool].e} Pożar! ${TOOLS[tool].n} spalił łącznie obiektów: ${burned.size}`;
+            notice = T[lang].fire(TOOLS[tool].e, TN(tool), burned.size);
           }
         }
-        if(tool==='wizard'){                      // mag miesza 2 losowe bloki
+        if(tool==='wizard'){                      // mag miesza 2 losowe bloki (bez ujawniania jakie)
           const sw = wizardSwap(i);
-          if(sw){
-            pop.push(...sw);
-            const g2=grid(), d=j=>`${TOOLS[cells[j]].e} (piętro ${floorOf(g2,j)+1})`;
-            notice = `${TOOLS.wizard.e} Mag zamienił miejscami ${d(sw[0])} i ${d(sw[1])}`;
-          }
+          if(sw) pop.push(...sw);
         }
       }
       update();
@@ -541,15 +781,26 @@ function render(){
     rowsEl.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
   }
 
+  const floorUpBtn = document.getElementById('floorUp'), floorDownBtn = document.getElementById('floorDown');
+  floorUpBtn.title = T[lang].floorUpTitle; floorDownBtn.title = T[lang].floorDownTitle;
   const nav = document.getElementById('floorNav');
   nav.style.display = numFloors>1 ? 'flex' : 'none';
   if(numFloors>1){
-    document.getElementById('floorUp').disabled = floor===0;
-    document.getElementById('floorDown').disabled = floor===numFloors-1;
+    floorUpBtn.disabled = floor===0;
+    floorDownBtn.disabled = floor===numFloors-1;
     document.getElementById('floorLabel').textContent =
-      floor===0 ? 'Najwyższe piętro'
-      : floor===numFloors-1 ? 'Najniższe piętro'
-      : `Piętro ${floor+1} z ${numFloors}`;
+      floor===0 ? T[lang].floorTop
+      : floor===numFloors-1 ? T[lang].floorBottom
+      : T[lang].floorMid(floor+1, numFloors);
+  }
+  const sphereUpBtn = document.getElementById('sphereUp'), sphereDownBtn = document.getElementById('sphereDown');
+  sphereDownBtn.title = T[lang].sphereLeftTitle; sphereUpBtn.title = T[lang].sphereRightTitle;
+  const snav = document.getElementById('sphereNav');
+  snav.style.display = spheresOn ? 'flex' : 'none';
+  if(spheresOn){
+    sphereDownBtn.disabled = sphere===0;
+    sphereUpBtn.disabled = sphere===SPHERES-1;
+    document.getElementById('sphereLabel').textContent = T[lang].sphereLabel(sphere+1, SPHERES);
   }
   const renderGhost = (elId, fl) => {
     const el = document.getElementById(elId);
@@ -567,6 +818,9 @@ function render(){
   renderGhost('ghostAbove', floor-1);
   renderGhost('ghostBelow', floor+1);
 
+  const solvedCount = results.filter(r=>r.ok).length;
+  document.getElementById('progress').textContent = T[lang].progress(solvedCount, RULES.length);
+
   const list = document.getElementById('rules'); list.innerHTML = '';
   const order = [...Array(stage).keys()].reverse()     
     .sort((a,b)=> results[a].ok - results[b].ok);      
@@ -574,28 +828,35 @@ function render(){
     const r = results[k], li = document.createElement('li');
     li.className = 'rule' + (r.ok?' ok':'') + (k===newRule?' new':'');
     li.innerHTML = `<span class="mark">${r.ok?'✓':'✗'}</span><span></span><span class="info"></span>`;
-    const txt = typeof RULES[k].text === 'function' ? RULES[k].text() : RULES[k].text;
+    const txt = RULES[k].text[lang];
     li.children[1].textContent = `${k+1}. ${txt}`;
     li.children[2].textContent = r.info || '';
     list.appendChild(li);
   }
   document.getElementById('win').innerHTML =
     (stage===RULES.length && results.every(r=>r.ok))
-      ? '<div class="win">Wszystkie zasady spełnione! Kolejne wkrótce.</div>' : '';
+      ? `<div class="win">${T[lang].win}</div>` : '';
   pop = null; newRule = null;
 }
 
 document.getElementById('reset').onclick = ()=>{
-  if(confirm('Na pewno zacząć od nowa? Cała plansza zostanie wyczyszczona.')) init();
+  if(confirm(T[lang].resetConfirm)) init();
 };
 document.getElementById('floorUp').onclick = ()=>changeFloor(-1);
 document.getElementById('floorDown').onclick = ()=>changeFloor(1);
+document.getElementById('sphereUp').onclick = ()=>changeSphere(1);
+document.getElementById('sphereDown').onclick = ()=>changeSphere(-1);
+document.querySelectorAll('#langSwitch button').forEach(b=>{
+  b.onclick = ()=>{ lang = b.dataset.lang; applyLangStatic(); render(); };
+});
 (function initLabels(){                      
   const cols = document.getElementById('colLabels');
   'ABCDEFGH'.split('').forEach(ch=>{ const s=document.createElement('span'); s.textContent=ch; cols.appendChild(s); });
 })();
+applyLangStatic();
 init();
 setInterval(()=>{ notice=''; update(); }, 30000);   
+
 </script>
 </body>
 </html>

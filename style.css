@@ -136,3 +136,19 @@ main > section{
 
 :focus-visible{outline:3px solid var(--chalk); outline-offset:2px}
 @media (prefers-reduced-motion:reduce){ *{animation:none!important; transition:none!important} }
+
+.lang-switch{
+  max-width:1000px; margin:14px auto 0; padding:0 16px;
+  display:flex; gap:6px; justify-content:flex-end;
+}
+.lang-switch button{
+  font:inherit; font-weight:600; font-size:.85rem; padding:5px 13px; border-radius:999px; cursor:pointer;
+  color:var(--chalk); background:transparent; border:2px solid var(--line);
+  transition:transform .12s, background .12s;
+}
+.lang-switch button:hover{background:rgba(234,243,255,.12)}
+.lang-switch button[aria-pressed="true"]{background:var(--chalk); color:var(--ink); border-color:var(--chalk)}
+
+.progress{
+  margin:0 0 14px; font-weight:600; font-size:1.05rem; color:var(--chalk);
+}
