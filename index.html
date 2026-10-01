@@ -196,10 +196,16 @@ const square = (g,s) => (g.rows - Number(s[1])) * W + (s.charCodeAt(0) - 97);
 /* ====== ZASADY ====== */
 const RULES = [
   { text:{pl:'Postaw co najmniej 2 chatki.', en:'Place at least 2 huts.', es:'Coloca al menos 2 chozas.'},
-    check:g=>{const n=of(g,'hut').length; return {ok:n>=2, bad:[], info:n+'/2'};} },
+    check:g=>{
+      const n = allCells.reduce((acc,arr)=>acc+arr.filter(t=>t==='hut').length,0);
+      return {ok:n>=2, bad:[], info:n+'/2'};
+    } },
 
   { text:{pl:'Postaw klasztor.', en:'Place a monastery.', es:'Coloca un monasterio.'}, unlock:'monastery',
-    check:g=>({ok:of(g,'monastery').length>=1, bad:[]}) },
+    check:g=>{
+      const total = allCells.reduce((n,arr)=> n + arr.filter(t=>t==='monastery').length, 0);
+      return {ok: total>=1, bad:[]};
+    } },
 
   { text:{
       pl:`Klasztor musi być oddalony o minimum ${MONASTERY_MIN_DIST} pola od każdego innego bloku.`,
@@ -207,15 +213,26 @@ const RULES = [
       es:`El monasterio debe estar al menos a ${MONASTERY_MIN_DIST} casillas de cualquier otro bloque.`,
     },
     check:g=>{
-      const ks=of(g,'monastery'), bad=[];
-      ks.forEach(k=>g.cells.forEach((t,b)=>{      
-        if(t && b!==k && dist(g,k,b) < MONASTERY_MIN_DIST) bad.push(k,b);
-      }));
-      return {ok:ks.length>0 && !bad.length, bad};
+      let anyMonastery=false, anyBad=false, bad=[];
+      allCells.forEach((arr,s)=>{
+        const sg = {cells:arr, rows};
+        const ks = of(sg,'monastery');
+        if(ks.length) anyMonastery = true;
+        ks.forEach(k=>arr.forEach((t,b)=>{
+          if(t && b!==k && dist(sg,k,b) < MONASTERY_MIN_DIST){
+            anyBad = true;
+            if(s===sphere) bad.push(k,b);
+          }
+        }));
+      });
+      return {ok:anyMonastery && !anyBad, bad};
     } },
 
   { text:{pl:'Połóż 3 zboża.', en:'Place 3 grain.', es:'Coloca 3 granos.'}, unlock:'grain',
-    check:g=>{const n=of(g,'grain').length; return {ok:n>=3, bad:[], info:n+'/3'};} },
+    check:g=>{
+      const n = allCells.reduce((acc,arr)=>acc+arr.filter(t=>t==='grain').length,0);
+      return {ok:n>=3, bad:[], info:n+'/3'};
+    } },
 
   { text:{
       pl:'Każde zboże musi sąsiadować z dokładnie jedną chatką.',
@@ -223,17 +240,29 @@ const RULES = [
       es:'Cada grano debe estar junto a exactamente una choza.',
     },
     check:g=>{
-      const fs=of(g,'grain');
-      const bad=fs.filter(f=>nb(g,f).filter(i=>g.cells[i]==='hut').length!==1);
-      return {ok:fs.length>0 && !bad.length, bad};
+      let anyEntity=false, anyBad=false, bad=[];
+      allCells.forEach((arr,sp)=>{
+        const sg={cells:arr, rows};
+        const fs=of(sg,'grain');
+        if(fs.length) anyEntity=true;
+        const localBad=fs.filter(f=>nb(sg,f).filter(i=>arr[i]==='hut').length!==1);
+        if(localBad.length){ anyBad=true; if(sp===sphere) bad.push(...localBad); }
+      });
+      return {ok:anyEntity && !anyBad, bad};
     } },
 
   { text:{pl:'Każda chatka musi stykać się z wodą.', en:'Every hut must touch water.', es:'Cada choza debe tocar el agua.'},
     unlock:'water', expand:true,
     check:g=>{
-      const hs=of(g,'hut');
-      const bad=hs.filter(h=>!nb(g,h).some(i=>g.cells[i]==='water'));
-      return {ok:hs.length>0 && !bad.length, bad};
+      let anyEntity=false, anyBad=false, bad=[];
+      allCells.forEach((arr,sp)=>{
+        const sg={cells:arr, rows};
+        const hs=of(sg,'hut');
+        if(hs.length) anyEntity=true;
+        const localBad=hs.filter(h=>!nb(sg,h).some(i=>arr[i]==='water'));
+        if(localBad.length){ anyBad=true; if(sp===sphere) bad.push(...localBad); }
+      });
+      return {ok:anyEntity && !anyBad, bad};
     } },
 
   { text:{
@@ -242,13 +271,19 @@ const RULES = [
       es:'Toda el agua debe estar conectada entre sí.',
     },
     check:g=>{
-      const ws=of(g,'water'); if(!ws.length) return {ok:false,bad:[]};
-      const seen=new Set([ws[0]]), q=[ws[0]];
-      while(q.length) nb(g,q.pop()).forEach(i=>{
-        if(g.cells[i]==='water' && !seen.has(i)){seen.add(i); q.push(i);}
+      let anyEntity=false, anyBad=false, bad=[];
+      allCells.forEach((arr,sp)=>{
+        const sg={cells:arr, rows};
+        const ws=of(sg,'water'); if(!ws.length) return;
+        anyEntity=true;
+        const seen=new Set([ws[0]]), q=[ws[0]];
+        while(q.length) nb(sg,q.pop()).forEach(i=>{
+          if(arr[i]==='water' && !seen.has(i)){seen.add(i); q.push(i);}
+        });
+        const localBad=ws.filter(i=>!seen.has(i));
+        if(localBad.length){ anyBad=true; if(sp===sphere) bad.push(...localBad); }
       });
-      const bad=ws.filter(i=>!seen.has(i));
-      return {ok:!bad.length, bad};
+      return {ok:anyEntity && !anyBad, bad};
     } },
 
   { text:{
@@ -258,24 +293,31 @@ const RULES = [
     },
     unlock:'stone',
     check:g=>{
-      const hs=of(g,'hut'); if(!hs.length) return {ok:false,bad:[]};
-      const knight=(a,b)=>{
-        const la=localOf(g,a), lb=localOf(g,b);
-        const d=[Math.floor(la/W)-Math.floor(lb/W), la%W-lb%W, floorOf(g,a)-floorOf(g,b)];
-        return d.map(Math.abs).sort().join()==='0,1,2';   // o 2, o 1 i o 0 w dowolnych wymiarach
-      };
-      const seen=new Set(), comps=[];
-      hs.forEach(s=>{
-        if(seen.has(s)) return;
-        const grp=[s]; seen.add(s);
-        for(let j=0;j<grp.length;j++) hs.forEach(o=>{
-          if(!seen.has(o) && knight(grp[j],o)){seen.add(o); grp.push(o);}
+      let anyEntity=false, anyBad=false, bad=[], info='';
+      allCells.forEach((arr,sp)=>{
+        const sg={cells:arr, rows};
+        const hs=of(sg,'hut'); if(!hs.length) return;
+        anyEntity=true;
+        const knight=(a,b)=>{
+          const la=localOf(sg,a), lb=localOf(sg,b);
+          const d=[Math.floor(la/W)-Math.floor(lb/W), la%W-lb%W, floorOf(sg,a)-floorOf(sg,b)];
+          return d.map(Math.abs).sort().join()==='0,1,2';   // o 2, o 1 i o 0 w dowolnych wymiarach
+        };
+        const seen=new Set(), comps=[];
+        hs.forEach(h0=>{
+          if(seen.has(h0)) return;
+          const grp=[h0]; seen.add(h0);
+          for(let j=0;j<grp.length;j++) hs.forEach(o=>{
+            if(!seen.has(o) && knight(grp[j],o)){seen.add(o); grp.push(o);}
+          });
+          comps.push(grp);
         });
-        comps.push(grp);
+        const main=comps.reduce((a,b)=>b.length>a.length?b:a);
+        const localBad=hs.filter(h=>!main.includes(h));
+        if(localBad.length){ anyBad=true; if(sp===sphere) bad.push(...localBad); }
+        if(sp===sphere) info = comps.length>1 ? T[lang].groups+comps.length : '';
       });
-      const main=comps.reduce((a,b)=>b.length>a.length?b:a);
-      const bad=hs.filter(h=>!main.includes(h));
-      return {ok:!bad.length, bad, info:comps.length>1 ? T[lang].groups+comps.length : ''};
+      return {ok:anyEntity && !anyBad, bad, info};
     } },
 
   { text:{
@@ -285,33 +327,40 @@ const RULES = [
     },
     check:g=>{
       const digit = new Date().getHours()%10;
-      const st = of(g,'stone');
-      const want = digitCells(digit,0,0).length;    
-      if(!st.length) return {ok:false, bad:[], info:`0/${want}`};
-      let best = 0;
-      for(let dr=0; dr<=g.rows-DIGIT_H; dr++) for(let dc=0; dc<=W-DIGIT_W; dc++){
-        const shape = digitCells(digit,dr,dc);
-        const have = shape.filter(i=>g.cells[i]==='stone').length;
-        if(have > best) best = have;
-        if(have === shape.length) return {ok:true, bad:[], info:`${want}/${want}`};
-      }
-      return {ok:false, bad:[], info:`${best}/${want}`};
+      const want = digitCells(digit,0,0).length;
+      let anyOk=false, currentBest=0;
+      allCells.forEach((arr,sp)=>{
+        let best = 0;
+        for(let dr=0; dr<=rows-DIGIT_H; dr++) for(let dc=0; dc<=W-DIGIT_W; dc++){
+          const shape = digitCells(digit,dr,dc);
+          const have = shape.filter(i=>arr[i]==='stone').length;
+          if(have > best) best = have;
+          if(have === shape.length) best = shape.length;
+        }
+        if(best === want) anyOk = true;
+        if(sp===sphere) currentBest = best;
+      });
+      return {ok: anyOk, bad:[], info:`${currentBest}/${want}`};
     } },
 
   { text:{pl:'Chatek musi być tyle samo co zbóż.', en:'There must be exactly as many huts as grain tiles.', es:'Debe haber la misma cantidad de chozas que de granos.'},
     check:g=>{
-      const h=of(g,'hut').length, z=of(g,'grain').length;
+      const h = allCells.reduce((a,arr)=>a+arr.filter(t=>t==='hut').length,0);
+      const z = allCells.reduce((a,arr)=>a+arr.filter(t=>t==='grain').length,0);
       return {ok:h>0 && h===z, bad:[], info:`${TOOLS.hut.e} ${h} · ${TOOLS.grain.e} ${z}`};
     } },
 
   { text:{pl:'Liczba chatek musi być dzielnikiem liczby 392392.', en:'The number of huts must be a divisor of 392392.', es:'El número de chozas debe ser un divisor de 392392.'},
     check:g=>{
-      const h=of(g,'hut').length;
+      const h = allCells.reduce((a,arr)=>a+arr.filter(t=>t==='hut').length,0);
       return {ok:h>0 && 392392 % h === 0, bad:[], info:`${h} ${T[lang].huts}`};
     } },
 
   { text:{pl:'Postaw stajnię.', en:'Place a stable.', es:'Coloca un establo.'}, unlock:'stable',
-    check:g=>({ok:of(g,'stable').length>=1, bad:[]}) },
+    check:g=>{
+      const n = allCells.reduce((a,arr)=>a+arr.filter(t=>t==='stable').length,0);
+      return {ok:n>=1, bad:[]};
+    } },
 
   { text:{
       pl:'Odległość między każdą stajnią a najbliższą chatką musi być mniejsza niż 2,5 pola.',
@@ -319,10 +368,16 @@ const RULES = [
       es:'La distancia entre cada establo y la choza más cercana debe ser menor que 2,5 casillas.',
     },
     check:g=>{
-      const st=of(g,'stable'), hs=of(g,'hut');
-      if(!st.length || !hs.length) return {ok:false, bad:[]};
-      const bad = st.filter(s=>Math.min(...hs.map(h=>dist(g,s,h))) >= 2.5);
-      return {ok:!bad.length, bad};
+      let anyEntity=false, anyBad=false, bad=[];
+      allCells.forEach((arr,sp)=>{
+        const sg={cells:arr, rows};
+        const st=of(sg,'stable'), hs=of(sg,'hut');
+        if(!st.length || !hs.length) return;
+        anyEntity=true;
+        const localBad = st.filter(s0=>Math.min(...hs.map(h=>dist(sg,s0,h))) >= 2.5);
+        if(localBad.length){ anyBad=true; if(sp===sphere) bad.push(...localBad); }
+      });
+      return {ok:anyEntity && !anyBad, bad};
     } },
 
   { text:{
@@ -357,11 +412,16 @@ const RULES = [
     },
     unlock:'well',
     check:g=>{
-      const ws=of(g,'well');
-      const variety=i=>new Set(nb8(g,i).map(j=>g.cells[j]).filter(Boolean)).size;
-      const ok = ws.length>0 && ws.some(w=>variety(w)>=6);
-      const best = ws.length ? Math.max(...ws.map(variety)) : 0;
-      return {ok, bad:[], info: ws.length ? `${best}/6` : ''};
+      let anyOk=false, currentBest=0, currentHas=false;
+      allCells.forEach((arr,sp)=>{
+        const sg={cells:arr, rows};
+        const ws=of(sg,'well');
+        const variety=i=>new Set(nb8(sg,i).map(j=>arr[j]).filter(Boolean)).size;
+        const best = ws.length ? Math.max(...ws.map(variety)) : 0;
+        if(ws.length>0 && best>=6) anyOk=true;
+        if(sp===sphere){ currentBest=best; currentHas=ws.length>0; }
+      });
+      return {ok:anyOk, bad:[], info: currentHas ? `${currentBest}/6` : ''};
     } },
 
   { text:{
@@ -370,10 +430,16 @@ const RULES = [
       es:'La distancia entre cada establo y cada choza debe ser mayor que 2 casillas.',
     },
     check:g=>{
-      const st=of(g,'stable'), hs=of(g,'hut');
-      if(!st.length || !hs.length) return {ok:false, bad:[]};
-      const bad = st.filter(s=>Math.min(...hs.map(h=>dist(g,s,h))) <= 2);
-      return {ok:!bad.length, bad};
+      let anyEntity=false, anyBad=false, bad=[];
+      allCells.forEach((arr,sp)=>{
+        const sg={cells:arr, rows};
+        const st=of(sg,'stable'), hs=of(sg,'hut');
+        if(!st.length || !hs.length) return;
+        anyEntity=true;
+        const localBad = st.filter(s0=>Math.min(...hs.map(h=>dist(sg,s0,h))) <= 2);
+        if(localBad.length){ anyBad=true; if(sp===sphere) bad.push(...localBad); }
+      });
+      return {ok:anyEntity && !anyBad, bad};
     } },
 
   { text:{
@@ -382,11 +448,17 @@ const RULES = [
       es:'Codifica en la fila inferior el número de granos usando chozas como código binario (choza = 1, sin choza = 0).',
     },
     check:g=>{
-      const grain = of(g,'grain').length;
-      const rowStart = (g.rows-1)*W;
-      const bits = [...Array(W).keys()].map(c=> g.cells[rowStart+c]==='hut' ? 1 : 0);
-      const value = bits.reduce((acc,b)=>acc*2+b, 0);
-      return {ok: grain>0 && value===grain, bad:[], info:`${value} / ${grain}`};
+      let anyOk=false, currentInfo='';
+      allCells.forEach((arr,sp)=>{
+        const sg={cells:arr, rows};
+        const grain = of(sg,'grain').length;
+        const rowStart = (rows-1)*W;
+        const bits = [...Array(W).keys()].map(c=> arr[rowStart+c]==='hut' ? 1 : 0);
+        const value = bits.reduce((acc,b)=>acc*2+b, 0);
+        if(grain>0 && value===grain) anyOk = true;
+        if(sp===sphere) currentInfo = `${value} / ${grain}`;
+      });
+      return {ok: anyOk, bad:[], info: currentInfo};
     } },
 
   { text:{
@@ -396,8 +468,12 @@ const RULES = [
     },
     unlock:'torch',
     check:g=>{
-      const need=['e4','c6','d4','d5'].map(s=>square(g,s));
-      return {ok: need.every(i=>g.cells[i]==='water'), bad:[]};
+      const ok = allCells.some(arr=>{
+        const sg={cells:arr, rows};
+        const need=['e4','c6','d4','d5'].map(sq=>square(sg,sq));
+        return need.every(i=>arr[i]==='water');
+      });
+      return {ok, bad:[]};
     } },
 
   { text:{
@@ -405,14 +481,21 @@ const RULES = [
       en:'Place a torch. Careful: fire can set nearby buildings and grain ablaze!',
       es:'Coloca una antorcha. ¡Cuidado: el fuego puede incendiar los edificios y granos cercanos!',
     },
-    check:g=>({ok:of(g,'torch').length>=1, bad:[]}) },
+    check:g=>{
+      const n = allCells.reduce((a,arr)=>a+arr.filter(t=>t==='torch').length,0);
+      return {ok:n>=1, bad:[]};
+    } },
 
   { text:{
       pl:'Liczba kamieni ma być równa liczbie starców a liczba pochodni liczbie lamp ognistych (zgodnie z Apokalipsą św. Jana 4,4).',
       en:'The number of stones must equal the number of elders, and the number of torches the number of fiery lamps (according to Revelation 4:4).',
       es:'El número de piedras debe igualar al número de ancianos, y el número de antorchas al de lámparas de fuego (según Apocalipsis 4:4).',
     },
-    check:g=>({ok: of(g,'stone').length===24 && of(g,'torch').length===7, bad:[]}) },
+    check:g=>{
+      const st = allCells.reduce((a,arr)=>a+arr.filter(t=>t==='stone').length,0);
+      const tc = allCells.reduce((a,arr)=>a+arr.filter(t=>t==='torch').length,0);
+      return {ok: st===24 && tc===7, bad:[]};
+    } },
 
   { text:{
       pl:'Pod każdą studnią, na piętrze niżej, musi być woda.',
@@ -421,15 +504,22 @@ const RULES = [
     },
     floors:true,
     check:g=>{
-      const totalFloors = g.cells.length / (g.rows*W);
-      const ws = of(g,'well');
-      const bad = ws.filter(w=>{
-        const fl = floorOf(g,w);
-        if(fl+1 >= totalFloors) return true;             
-        const below = (fl+1)*g.rows*W + localOf(g,w);
-        return g.cells[below] !== 'water';
+      let anyEntity=false, anyBad=false, bad=[];
+      allCells.forEach((arr,sp)=>{
+        const sg={cells:arr, rows};
+        const totalFloors = arr.length / (rows*W);
+        const ws = of(sg,'well');
+        if(!ws.length) return;
+        anyEntity=true;
+        const localBad = ws.filter(w=>{
+          const fl = floorOf(sg,w);
+          if(fl+1 >= totalFloors) return true;
+          const below = (fl+1)*rows*W + localOf(sg,w);
+          return arr[below] !== 'water';
+        });
+        if(localBad.length){ anyBad=true; if(sp===sphere) bad.push(...localBad); }
       });
-      return {ok: ws.length>0 && !bad.length, bad};
+      return {ok: anyEntity && !anyBad, bad};
     } },
 
   { text:{
@@ -465,7 +555,8 @@ const RULES = [
       es:'Odv fkrcdv ghehq vhu hadfwdphqwh flqfr pdv txh orv hvwdeorv. (Cifrado César. Clave 3)',
     },
     check:g=>{
-      const h=of(g,'hut').length, s=of(g,'stable').length;
+      const h = allCells.reduce((a,arr)=>a+arr.filter(t=>t==='hut').length,0);
+      const s = allCells.reduce((a,arr)=>a+arr.filter(t=>t==='stable').length,0);
       return {ok: h===s+5, bad:[], info:`${TOOLS.hut.e} ${h} · ${TOOLS.stable.e} ${s}`};
     } },
 
@@ -475,24 +566,32 @@ const RULES = [
       es:'Los agujeros deben estar conectados por agua (cada agujero debe tocar la misma red de agua conectada).',
     },
     check:g=>{
-      const holes=of(g,'hole'); if(!holes.length) return {ok:false,bad:[]};
-      const comp=new Map(); let n=0;
-      of(g,'water').forEach(w=>{
-        if(comp.has(w)) return;
-        comp.set(w,n); const q=[w];
-        while(q.length) nb(g,q.pop()).forEach(i=>{
-          if(g.cells[i]==='water' && !comp.has(i)){comp.set(i,n); q.push(i);}
+      let anyHole=false, anyBad=false, bad=[], info='';
+      allCells.forEach((arr,s)=>{
+        const sg = {cells:arr, rows};
+        const holes = of(sg,'hole');
+        if(!holes.length) return;
+        anyHole = true;
+        const comp=new Map(); let n=0;
+        of(sg,'water').forEach(w=>{
+          if(comp.has(w)) return;
+          comp.set(w,n); const q=[w];
+          while(q.length) nb(sg,q.pop()).forEach(i=>{
+            if(arr[i]==='water' && !comp.has(i)){comp.set(i,n); q.push(i);}
+          });
+          n++;
         });
-        n++;
+        const touch=h=>new Set(nb(sg,h).filter(i=>comp.has(i)).map(i=>comp.get(i)));
+        let best=-1, bestCount=0;
+        for(let c=0;c<n;c++){
+          const k=holes.filter(h=>touch(h).has(c)).length;
+          if(k>bestCount){bestCount=k; best=c;}
+        }
+        const localBad = holes.filter(h=>best<0 || !touch(h).has(best));
+        if(localBad.length){ anyBad = true; if(s===sphere) bad.push(...localBad); }
+        if(s===sphere) info = `${bestCount}/${holes.length}`;
       });
-      const touch=h=>new Set(nb(g,h).filter(i=>comp.has(i)).map(i=>comp.get(i)));
-      let best=-1, bestCount=0;
-      for(let c=0;c<n;c++){
-        const k=holes.filter(h=>touch(h).has(c)).length;
-        if(k>bestCount){bestCount=k; best=c;}
-      }
-      const bad=holes.filter(h=>best<0 || !touch(h).has(best));
-      return {ok:!bad.length, bad, info:`${bestCount}/${holes.length}`};
+      return {ok: anyHole && !anyBad, bad, info};
     } },
 
   { text:{
@@ -502,14 +601,22 @@ const RULES = [
     },
     unlock:'bluefire',
     check:g=>{
-      const bf=of(g,'bluefire'), total=numFloorsOf(g);
-      if(!bf.length) return {ok:false,bad:[],info:`0/${total-1} ${T[lang].floorsWord}`};
-      const prod=i=>{const loc=localOf(g,i); return (loc%W+1)*(g.rows-Math.floor(loc/W))*(floorOf(g,i)+1);};
-      const counts={}; bf.forEach(i=>{const p=prod(i); counts[p]=(counts[p]||0)+1;});
-      const mode=Number(Object.keys(counts).reduce((a,b)=>counts[b]>counts[a]?b:a));
-      const bad=bf.filter(i=>prod(i)!==mode);
-      const covered=new Set(bf.map(floorOf.bind(null,g)).filter(f=>f>0)).size;
-      return {ok:!bad.length && covered===total-1, bad, info:`${covered}/${total-1} ${T[lang].floorsWord}`};
+      const total = numFloorsOf(g);
+      let anyEntity=false, anyBad=false, bad=[], info=`0/${total-1} ${T[lang].floorsWord}`;
+      allCells.forEach((arr,sp)=>{
+        const sg={cells:arr, rows};
+        const bf=of(sg,'bluefire');
+        if(!bf.length) return;
+        anyEntity=true;
+        const prod=i=>{const loc=localOf(sg,i); return (loc%W+1)*(rows-Math.floor(loc/W))*(floorOf(sg,i)+1);};
+        const counts={}; bf.forEach(i=>{const p=prod(i); counts[p]=(counts[p]||0)+1;});
+        const mode=Number(Object.keys(counts).reduce((a,b)=>counts[b]>counts[a]?b:a));
+        const localBad=bf.filter(i=>prod(i)!==mode);
+        const covered=new Set(bf.map(floorOf.bind(null,sg)).filter(f=>f>0)).size;
+        if(localBad.length || covered!==total-1){ anyBad=true; if(sp===sphere) bad.push(...localBad); }
+        if(sp===sphere) info = `${covered}/${total-1} ${T[lang].floorsWord}`;
+      });
+      return {ok:anyEntity && !anyBad, bad, info};
     } },
 
   { text:{
@@ -518,17 +625,26 @@ const RULES = [
       es:'La cantidad de agua en cada piso debe ser múltiplo del número de piso (el piso más alto = 1).',
     },
     check:g=>{
-      const total=numFloorsOf(g), per=g.rows*W, bad=[], counts=[]; let ok=true;
-      for(let f=0;f<total;f++){
-        const ws=[...Array(per).keys()].map(l=>f*per+l).filter(i=>g.cells[i]==='water');
-        counts.push(ws.length);
-        if(ws.length % (f+1) !== 0){ok=false; bad.push(...ws);}
-      }
-      return {ok, bad, info:counts.join(' · ')};
+      const total=numFloorsOf(g), per=rows*W;
+      let anyBad=false, bad=[], info='';
+      allCells.forEach((arr,sp)=>{
+        const counts=[]; let localOk=true, localBad=[];
+        for(let f=0;f<total;f++){
+          const ws=[...Array(per).keys()].map(l=>f*per+l).filter(i=>arr[i]==='water');
+          counts.push(ws.length);
+          if(ws.length % (f+1) !== 0){ localOk=false; localBad.push(...ws); }
+        }
+        if(!localOk){ anyBad=true; if(sp===sphere) bad.push(...localBad); }
+        if(sp===sphere) info = counts.join(' · ');
+      });
+      return {ok: !anyBad, bad, info};
     } },
 
   { text:{pl:'Postaw uniwersytet.', en:'Place a university.', es:'Coloca una universidad.'}, unlock:'university',
-    check:g=>({ok:of(g,'university').length>=1, bad:[]}) },
+    check:g=>{
+      const n = allCells.reduce((a,arr)=>a+arr.filter(t=>t==='university').length,0);
+      return {ok:n>=1, bad:[]};
+    } },
 
   { text:{
       pl:'Liczba bloków w rzędzie, kolumnie i pionie uniwersytetu musi być taka sama i większa od zera (sam uniwersytet się nie liczy).',
@@ -536,18 +652,24 @@ const RULES = [
       es:'El número de bloques en la fila, la columna y la vertical de la universidad debe ser igual y mayor que cero (la propia universidad no cuenta).',
     },
     check:g=>{
-      const us=of(g,'university'), total=numFloorsOf(g), per=g.rows*W, bad=[]; let info='';
-      us.forEach(u=>{
-        const loc=localOf(g,u), r=Math.floor(loc/W), c=loc%W, f=floorOf(g,u);
-        const isB=i=>i!==u && !!g.cells[i];
-        let v=0,h=0,z=0;
-        for(let rr=0;rr<g.rows;rr++) if(isB(f*per+rr*W+c)) v++;
-        for(let cc=0;cc<W;cc++)      if(isB(f*per+r*W+cc)) h++;
-        for(let ff=0;ff<total;ff++)  if(isB(ff*per+loc)) z++;
-        info=`${v} / ${h} / ${z}`;
-        if(!(v===h && h===z && v>0)) bad.push(u);
+      const total=numFloorsOf(g), per=rows*W;
+      let anyEntity=false, anyBad=false, bad=[], info='';
+      allCells.forEach((arr,sp)=>{
+        const sg={cells:arr, rows};
+        const us=of(sg,'university');
+        us.forEach(u=>{
+          anyEntity=true;
+          const loc=localOf(sg,u), r=Math.floor(loc/W), c=loc%W, f=floorOf(sg,u);
+          const isB=i=>i!==u && !!arr[i];
+          let v=0,h=0,z=0;
+          for(let rr=0;rr<rows;rr++) if(isB(f*per+rr*W+c)) v++;
+          for(let cc=0;cc<W;cc++)      if(isB(f*per+r*W+cc)) h++;
+          for(let ff=0;ff<total;ff++)  if(isB(ff*per+loc)) z++;
+          if(sp===sphere) info = `${v} / ${h} / ${z}`;
+          if(!(v===h && h===z && v>0)){ anyBad=true; if(sp===sphere) bad.push(u); }
+        });
       });
-      return {ok:us.length>0 && !bad.length, bad, info};
+      return {ok:anyEntity && !anyBad, bad, info};
     } },
 
   { text:{
@@ -556,7 +678,10 @@ const RULES = [
       es:'Coloca la choza del mago. Cuidado: al colocarla, 2 bloques al azar intercambian su lugar.',
     },
     unlock:'wizard',
-    check:g=>({ok:of(g,'wizard').length>=1, bad:[]}) },
+    check:g=>{
+      const n = allCells.reduce((a,arr)=>a+arr.filter(t=>t==='wizard').length,0);
+      return {ok:n>=1, bad:[]};
+    } },
 
   { text:{
       pl:'Na skos we wszystkich 3 wymiarach od co najmniej jednego domku maga musi znajdować się minimum 10 różnych rodzajów bloków.',
@@ -564,20 +689,27 @@ const RULES = [
       es:'En diagonal a través de las 3 dimensiones desde al menos una choza del mago debe haber al menos 10 tipos diferentes de bloques.',
     },
     check:g=>{
-      const ws=of(g,'wizard'), total=numFloorsOf(g), per=g.rows*W;
-      const kinds=w=>{
-        const loc=localOf(g,w), r=Math.floor(loc/W), c=loc%W, f=floorOf(g,w), set=new Set();
-        for(const dr of [-1,1]) for(const dc of [-1,1]) for(const df of [-1,1]){
-          let rr=r+dr, cc=c+dc, ff=f+df;
-          while(rr>=0 && rr<g.rows && cc>=0 && cc<W && ff>=0 && ff<total){
-            const t=g.cells[ff*per+rr*W+cc]; if(t) set.add(t);
-            rr+=dr; cc+=dc; ff+=df;
+      const total=numFloorsOf(g), per=rows*W;
+      let anyOk=false, currentBest=0, currentHas=false;
+      allCells.forEach((arr,sp)=>{
+        const sg={cells:arr, rows};
+        const ws=of(sg,'wizard');
+        const kinds=w=>{
+          const loc=localOf(sg,w), r=Math.floor(loc/W), c=loc%W, f=floorOf(sg,w), set=new Set();
+          for(const dr of [-1,1]) for(const dc of [-1,1]) for(const df of [-1,1]){
+            let rr=r+dr, cc=c+dc, ff=f+df;
+            while(rr>=0 && rr<rows && cc>=0 && cc<W && ff>=0 && ff<total){
+              const t=arr[ff*per+rr*W+cc]; if(t) set.add(t);
+              rr+=dr; cc+=dc; ff+=df;
+            }
           }
-        }
-        return set.size;
-      };
-      const best=ws.length ? Math.max(...ws.map(kinds)) : 0;
-      return {ok:best>=10, bad:[], info: ws.length ? `${best}/10` : ''};
+          return set.size;
+        };
+        const best = ws.length ? Math.max(...ws.map(kinds)) : 0;
+        if(best>=10) anyOk = true;
+        if(sp===sphere){ currentBest=best; currentHas=ws.length>0; }
+      });
+      return {ok:anyOk, bad:[], info: currentHas ? `${currentBest}/10` : ''};
     } },
 
   { text:{
@@ -587,29 +719,90 @@ const RULES = [
     },
     check:g=>{
       const total = numFloorsOf(g);
-      const per = g.rows * W;
-      let maxStack = 0;
-      
-      // Sprawdzamy każde z pól 2D na planszy (0 do 63)
-      for(let loc = 0; loc < per; loc++) {
-         let stack = 0;
-         for(let f = 0; f < total; f++) {
-            if(g.cells[f * per + loc] === 'wizard') stack++;
-         }
-         if(stack > maxStack) {
-             maxStack = stack;
-         }
-      }
-      return {ok: maxStack === total && total > 1, bad: [], info: `${maxStack}/${total}`};
+      const per = rows * W;
+      let anyOk=false, currentMax=0;
+      allCells.forEach((arr,sp)=>{
+        let maxStack = 0;
+        for(let loc = 0; loc < per; loc++) {
+          let stack = 0;
+          for(let f = 0; f < total; f++) if(arr[f*per+loc]==='wizard') stack++;
+          if(stack > maxStack) maxStack = stack;
+        }
+        if(maxStack === total && total > 1) anyOk = true;
+        if(sp===sphere) currentMax = maxStack;
+      });
+      return {ok: anyOk, bad: [], info: `${currentMax}/${total}`};
     } },
 
   { text:{
-      pl:'Postaw pomnik na piętrze 3 (później je zmienimy).',
-      en:'Place a monument on floor 3 (we will change this later).',
-      es:'Coloca un monumento en el piso 3 (más adelante lo cambiaremos).',
+      pl:'Postaw pomniki, spełniając naraz pięć warunków:<br><br><b>1) na najwyższym piętrze</b> – jeden pomnik za każdą unikalną cyfrę w zapisie rzymskim liczby zbóż;<br><br><b>2) na 2. piętrze</b> – jeden pomnik za każdy dzielnik liczby chatek;<br><br><b>3) na 3. piętrze</b> – pomnik ma stać wtedy i tylko wtedy, gdy liczba wody NIE należy do ciągu Fibonacciego ALBO liczba studni do niego należy;<br><br><b>4) na 4. piętrze</b> – pomnik ma stać wtedy i tylko wtedy, gdy prawdziwe jest zdanie: „Jeżeli całkowita liczba postawionych przez ciebie bloków (traktowana jako długość fali w nanometrach) mieści się w widmie światła widzialnego, to liczba bloków wody musi być podzielna przez 3”;<br><br><b>5) na najniższym piętrze</b> – pomnik ma stać wtedy i tylko wtedy, gdy istnieją co najmniej dwa identyczne piętra.',
+      en:'Place monuments to satisfy five conditions at once:<br><br><b>1) on the top floor</b> – one monument for every unique digit in the Roman numeral of the grain count;<br><br><b>2) on floor 2</b> – one monument for every divisor of the hut count;<br><br><b>3) on floor 3</b> – a monument must stand if and only if EITHER the water count is NOT a Fibonacci number, OR the well count is;<br><br><b>4) on floor 4</b> – a monument must stand if and only if this statement is true: "If the total number of blocks you have placed (treated as a wavelength in nanometres) falls within the visible light spectrum, then the number of water blocks must be divisible by 3";<br><br><b>5) on the bottom floor</b> – a monument must stand if and only if at least two floors are identical.',
+      es:'Coloca monumentos cumpliendo cinco condiciones a la vez:<br><br><b>1) en el piso más alto</b> – un monumento por cada dígito único en la numeración romana del número de granos;<br><br><b>2) en el piso 2</b> – un monumento por cada divisor del número de chozas;<br><br><b>3) en el piso 3</b> – debe haber un monumento si y solo si O BIEN la cantidad de agua NO es un número de Fibonacci, O BIEN la cantidad de pozos lo es;<br><br><b>4) en el piso 4</b> – debe haber un monumento si y solo si es verdadera esta afirmación: «Si el número total de bloques colocados (como longitud de onda en nanómetros) está dentro del espectro visible, entonces el número de bloques de agua debe ser divisible por 3»;<br><br><b>5) en el piso más bajo</b> – debe haber un monumento si y solo si existen al menos dos pisos idénticos.',
     },
     unlock:'monument',
-    check:g=>({ok: of(g,'monument').some(i=>floorOf(g,i)===2), bad:[]}) },
+    check:g=>{
+      const per = rows*W, total = numFloorsOf(g);
+      const sumTool = t => allCells.reduce((a,arr)=>a+arr.filter(x=>x===t).length,0);
+      const monumentsOnFloor = f => allCells.reduce((a,arr)=>a+arr.slice(f*per,(f+1)*per).filter(x=>x==='monument').length,0);
+
+      const toRoman = n=>{
+        const vals=[[1000,'M'],[900,'CM'],[500,'D'],[400,'CD'],[100,'C'],[90,'XC'],[50,'L'],[40,'XL'],[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']];
+        let x=n, out='';
+        for(const [v,sym] of vals){ while(x>=v){ out+=sym; x-=v; } }
+        return out;
+      };
+      const countDivisors = n=>{ if(n<=0) return 0; let c=0; for(let d=1; d<=n; d++) if(n%d===0) c++; return c; };
+      const isFib = n=>{
+        if(n<0) return false;
+        let a=0,b=1;
+        while(a<=n){ if(a===n) return true; const t=a+b; a=b; b=t; }
+        return false;
+      };
+
+      const totalGrain  = sumTool('grain');
+      const totalHuts   = sumTool('hut');
+      const totalWater  = sumTool('water');
+      const totalWells  = sumTool('well');
+      const totalBlocks = allCells.reduce((a,arr)=>a+arr.filter(Boolean).length,0);
+
+      const req1 = totalGrain>0 ? new Set(toRoman(totalGrain)).size : 0;
+      const req2 = countDivisors(totalHuts);
+      
+      // Zmiana operatora z || na !== (logiczne XOR w JavaScript dla wartości boolean)
+      const cond3 = (!isFib(totalWater)) !== isFib(totalWells);
+      
+      const inVisible = totalBlocks>=380 && totalBlocks<=750;
+      const cond4 = !inVisible || (totalWater % 3 === 0);
+      let dup = false;
+      const seenLayers = new Set();
+      allCells.forEach(arr=>{
+        for(let f=0; f<total; f++){
+          const key = arr.slice(f*per,(f+1)*per).join(',');
+          if(seenLayers.has(key)) dup = true;
+          seenLayers.add(key);
+        }
+      });
+      const cond5 = dup;
+
+      const have1 = monumentsOnFloor(0);
+      const have2 = monumentsOnFloor(1);
+      const have3 = monumentsOnFloor(2) >= 1;
+      const have4 = monumentsOnFloor(3) >= 1;
+      const have5 = monumentsOnFloor(4) >= 1;
+
+      const ok1 = have1 === req1;
+      const ok2 = have2 === req2;
+      const ok3 = have3 === cond3;
+      const ok4 = have4 === cond4;
+      const ok5 = have5 === cond5;
+
+      const mark = b => b ? '✓' : '✗';
+      return {
+        ok: ok1 && ok2 && ok3 && ok4 && ok5,
+        bad: [],
+        info: `1:${have1}/${req1} ${mark(ok1)} · 2:${have2}/${req2} ${mark(ok2)} · 3:${mark(ok3)} · 4:${mark(ok4)} · 5:${mark(ok5)}`,
+      };
+    } },
 
   { text:{
       pl:'Gratulacje, doszedłeś już tak daleko. To jeszcze na koniec jedna prosta rzecz – już czysta formalność, postaw stajnię w każdej sferze.',
@@ -676,6 +869,22 @@ function changeFloor(delta){
     render();
     requestAnimationFrame(()=> document.getElementById('board').classList.remove('switching'));
   }, 140);
+}
+
+function testUnlockAll(){            // tryb testowy: klawisz 0 odblokowuje wszystko
+  stage = RULES.length;
+  if(rows === 1){
+    rows = W;
+    allCells = allCells.map(arr=>arr.concat(Array(W*(W-1)).fill(null)));
+  }
+  if(numFloors === 1){
+    numFloors = FLOORS;
+    allCells = allCells.map(arr=>arr.concat(Array(rows*W*(FLOORS-1)).fill(null)));
+  }
+  cells = allCells[sphere];
+  spheresOn = true;
+  notice = '';
+  render();
 }
 
 function changeSphere(delta){
@@ -829,7 +1038,7 @@ function render(){
     li.className = 'rule' + (r.ok?' ok':'') + (k===newRule?' new':'');
     li.innerHTML = `<span class="mark">${r.ok?'✓':'✗'}</span><span></span><span class="info"></span>`;
     const txt = RULES[k].text[lang];
-    li.children[1].textContent = `${k+1}. ${txt}`;
+    li.children[1].innerHTML = `${k+1}. ${txt}`;
     li.children[2].textContent = r.info || '';
     list.appendChild(li);
   }
@@ -848,6 +1057,9 @@ document.getElementById('sphereUp').onclick = ()=>changeSphere(1);
 document.getElementById('sphereDown').onclick = ()=>changeSphere(-1);
 document.querySelectorAll('#langSwitch button').forEach(b=>{
   b.onclick = ()=>{ lang = b.dataset.lang; applyLangStatic(); render(); };
+});
+document.addEventListener('keydown', e=>{             // tryb testowy
+  if(e.key === '0') testUnlockAll();
 });
 (function initLabels(){                      
   const cols = document.getElementById('colLabels');
