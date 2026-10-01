@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<style>.promo{display:none;margin:16px 0 0;padding:12px 14px;border-radius:10px;background:rgba(234,243,255,.07);border:1.5px dashed var(--line);color:var(--muted);font-size:.95rem}.promo a{color:var(--chalk);font-weight:600}</style>
 </head>
 <body>
 <div class="lang-switch" id="langSwitch">
@@ -46,6 +47,7 @@
   <section>
     <p class="progress" id="progress"></p>
     <ol class="rules" id="rules"></ol>
+    <p class="promo" id="promo"></p>
     <div id="win"></div>
   </section>
 </main>
@@ -99,6 +101,7 @@ const T = {
     fire:(ic,nm,n)=>`${ic} Pożar! ${nm} spalił łącznie obiektów: ${n}`,
     unlocked:'Odblokowano: ',
     win:'Wszystkie zasady spełnione! Kolejne wkrótce.',
+    promo:'Jeżeli podobają ci się tego typu projekty, zaobserwuj profil twórcy na IG',
     resetConfirm:'Na pewno zacząć od nowa? Cała plansza zostanie wyczyszczona.',
     cellLabel:(f,r,c)=>`Piętro ${f}, kratka ${r}, ${c}`,
     progress:(done,total)=>`Postęp: ${done} / ${total}`,
@@ -118,6 +121,7 @@ const T = {
     fire:(ic,nm,n)=>`${ic} Fire! ${nm} burned a total of ${n} objects`,
     unlocked:'Unlocked: ',
     win:'All rules satisfied! More coming soon.',
+    promo:'If you like projects like this, follow the creator on IG',
     resetConfirm:'Start over for real? The whole board will be cleared.',
     cellLabel:(f,r,c)=>`Floor ${f}, tile ${r}, ${c}`,
     progress:(done,total)=>`Progress: ${done} / ${total}`,
@@ -137,6 +141,7 @@ const T = {
     fire:(ic,nm,n)=>`${ic} ¡Incendio! ${nm} quemó en total ${n} objetos`,
     unlocked:'Desbloqueado: ',
     win:'¡Todas las reglas cumplidas! Pronto habrá más.',
+    promo:'Si te gustan este tipo de proyectos, sigue al creador en IG',
     resetConfirm:'¿Seguro que quieres empezar de nuevo? Se borrará todo el tablero.',
     cellLabel:(f,r,c)=>`Piso ${f}, casilla ${r}, ${c}`,
     progress:(done,total)=>`Progreso: ${done} / ${total}`,
@@ -449,10 +454,9 @@ const RULES = [
     },
     check:g=>{
       let anyOk=false, currentInfo='';
+      const rowStart = (rows-1)*W;
+      const grain = allCells.reduce((a,arr)=>a+arr.filter(x=>x==='grain').length,0);   // zboże z wszystkich sfer
       allCells.forEach((arr,sp)=>{
-        const sg={cells:arr, rows};
-        const grain = of(sg,'grain').length;
-        const rowStart = (rows-1)*W;
         const bits = [...Array(W).keys()].map(c=> arr[rowStart+c]==='hut' ? 1 : 0);
         const value = bits.reduce((acc,b)=>acc*2+b, 0);
         if(grain>0 && value===grain) anyOk = true;
@@ -800,7 +804,7 @@ const RULES = [
       return {
         ok: ok1 && ok2 && ok3 && ok4 && ok5,
         bad: [],
-        info: `1:${have1}/${req1} ${mark(ok1)} · 2:${have2}/${req2} ${mark(ok2)} · 3:${mark(ok3)} · 4:${mark(ok4)} · 5:${mark(ok5)}`,
+        info: '',
       };
     } },
 
@@ -1113,6 +1117,11 @@ function render(){
     li.children[2].textContent = r.info || '';
     list.appendChild(li);
   }
+  const promo = document.getElementById('promo');
+  if(stage >= 16){                                   // po odblokowaniu zasady 16
+    promo.innerHTML = `${T[lang].promo} <a href="https://www.instagram.com/szyrgol/" target="_blank" rel="noopener noreferrer">@szyrgol</a>`;
+    promo.style.display = 'block';
+  } else { promo.style.display = 'none'; promo.innerHTML = ''; }
   document.getElementById('win').innerHTML =
     (stage===RULES.length && results.every(r=>r.ok))
       ? `<div class="win">${T[lang].win}</div>` : '';
