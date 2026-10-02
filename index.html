@@ -100,7 +100,7 @@ const T = {
     sphereLabel:(n,t)=>`Sfera ${n} z ${t}`,
     fire:(ic,nm,n)=>`${ic} Pożar! ${nm} spalił łącznie obiektów: ${n}`,
     unlocked:'Odblokowano: ',
-    win:'Wszystkie zasady spełnione! Kolejne wkrótce.',
+    win:'Gratulacje! Ukończyłeś grę. 🎉',
     promo:'Jeżeli podobają ci się tego typu projekty, zaobserwuj profil twórcy na IG',
     resetConfirm:'Na pewno zacząć od nowa? Cała plansza zostanie wyczyszczona.',
     cellLabel:(f,r,c)=>`Piętro ${f}, kratka ${r}, ${c}`,
@@ -120,7 +120,7 @@ const T = {
     sphereLabel:(n,t)=>`Sphere ${n} of ${t}`,
     fire:(ic,nm,n)=>`${ic} Fire! ${nm} burned a total of ${n} objects`,
     unlocked:'Unlocked: ',
-    win:'All rules satisfied! More coming soon.',
+    win:'Congratulations! You completed the game. 🎉',
     promo:'If you like projects like this, follow the creator on IG',
     resetConfirm:'Start over for real? The whole board will be cleared.',
     cellLabel:(f,r,c)=>`Floor ${f}, tile ${r}, ${c}`,
@@ -140,7 +140,7 @@ const T = {
     sphereLabel:(n,t)=>`Esfera ${n} de ${t}`,
     fire:(ic,nm,n)=>`${ic} ¡Incendio! ${nm} quemó en total ${n} objetos`,
     unlocked:'Desbloqueado: ',
-    win:'¡Todas las reglas cumplidas! Pronto habrá más.',
+    win:'¡Felicidades! Has completado el juego. 🎉',
     promo:'Si te gustan este tipo de proyectos, sigue al creador en IG',
     resetConfirm:'¿Seguro que quieres empezar de nuevo? Se borrará todo el tablero.',
     cellLabel:(f,r,c)=>`Piso ${f}, casilla ${r}, ${c}`,
@@ -195,6 +195,34 @@ const nb8 = (g,i) => {
     }
   }
   return o;
+};
+/* Woda łączy się też między sferami: to samo pole w sąsiednich sferach jest sąsiadujące. */
+const waterNetworks = () => {
+  const comp = new Map();            // klucz "sfera:indeks" -> numer sieci
+  const sizes = [];
+  const key = (sp,i) => sp+':'+i;
+  const neighbors = (sp,i) => {
+    const sg = {cells:allCells[sp], rows};
+    const out = nb(sg,i).map(j=>[sp,j]);
+    if(spheresOn){
+      if(sp>0) out.push([sp-1,i]);
+      if(sp<SPHERES-1) out.push([sp+1,i]);
+    }
+    return out;
+  };
+  allCells.forEach((arr,sp)=>arr.forEach((t,i)=>{
+    if(t!=='water' || comp.has(key(sp,i))) return;
+    const id = sizes.length; let n = 0;
+    comp.set(key(sp,i), id); const q=[[sp,i]];
+    while(q.length){
+      const [a,b] = q.pop(); n++;
+      neighbors(a,b).forEach(([sa,sb])=>{
+        if(allCells[sa][sb]==='water' && !comp.has(key(sa,sb))){ comp.set(key(sa,sb), id); q.push([sa,sb]); }
+      });
+    }
+    sizes.push(n);
+  }));
+  return {comp, sizes, key, neighbors};
 };
 const square = (g,s) => (g.rows - Number(s[1])) * W + (s.charCodeAt(0) - 97);
 
@@ -276,18 +304,15 @@ const RULES = [
       es:'Toda el agua debe estar conectada entre sí.',
     },
     check:g=>{
-      let anyEntity=false, anyBad=false, bad=[];
-      allCells.forEach((arr,sp)=>{
-        const sg={cells:arr, rows};
-        const ws=of(sg,'water'); if(!ws.length) return;
-        anyEntity=true;
-        const seen=new Set([ws[0]]), q=[ws[0]];
-        while(q.length) nb(sg,q.pop()).forEach(i=>{
-          if(arr[i]==='water' && !seen.has(i)){seen.add(i); q.push(i);}
-        });
-        const localBad=ws.filter(i=>!seen.has(i));
-        if(localBad.length){ anyBad=true; if(sp===sphere) bad.push(...localBad); }
+      const net = waterNetworks();
+      if(!net.sizes.length) return {ok:false, bad:[]};
+      const main = net.sizes.indexOf(Math.max(...net.sizes));
+      let bad=[];
+      allCells[sphere].forEach((t,i)=>{
+        if(t==='water' && net.comp.get(net.key(sphere,i))!==main) bad.push(i);
       });
+      const anyBad = net.sizes.length > 1;
+      const anyEntity = true;
       return {ok:anyEntity && !anyBad, bad};
     } },
 
@@ -448,20 +473,17 @@ const RULES = [
     } },
 
   { text:{
-      pl:'Zapisz w dolnym rzędzie liczbę zbóż, używając chatek jako kodu binarnego (chatka = 1, brak chatki = 0).',
-      en:'Encode the number of grain tiles in the bottom row using huts as binary code (hut = 1, no hut = 0).',
-      es:'Codifica en la fila inferior el número de granos usando chozas como código binario (choza = 1, sin choza = 0).',
+      pl:'Zapisz w dolnym rzędzie pierwszej sfery liczbę zbóż (ze wszystkich sfer), używając chatek jako kodu binarnego (chatka = 1, brak chatki = 0).',
+      en:'Encode the number of grain tiles (across all spheres) in the bottom row of the first sphere using huts as binary code (hut = 1, no hut = 0).',
+      es:'Codifica en la fila inferior de la primera esfera el número de granos (de todas las esferas) usando chozas como código binario (choza = 1, sin choza = 0).',
     },
     check:g=>{
-      let anyOk=false, currentInfo='';
       const rowStart = (rows-1)*W;
-      const grain = allCells.reduce((a,arr)=>a+arr.filter(x=>x==='grain').length,0);   // zboże z wszystkich sfer
-      allCells.forEach((arr,sp)=>{
-        const bits = [...Array(W).keys()].map(c=> arr[rowStart+c]==='hut' ? 1 : 0);
-        const value = bits.reduce((acc,b)=>acc*2+b, 0);
-        if(grain>0 && value===grain) anyOk = true;
-        if(sp===sphere) currentInfo = `${value} / ${grain}`;
-      });
+      const grain = allCells.reduce((a,arr)=>a+arr.filter(x=>x==='grain').length,0);   // zboże ze wszystkich sfer
+      // kod czytany jest z dolnego rzędu pierwszej sfery (najwyższe piętro)
+      const bits = [...Array(W).keys()].map(c=> allCells[0][rowStart+c]==='hut' ? 1 : 0);
+      const value = bits.reduce((acc,b)=>acc*2+b, 0);
+      const anyOk = grain>0 && value===grain, currentInfo = `${value} / ${grain}`;
       return {ok: anyOk, bad:[], info: currentInfo};
     } },
 
@@ -570,31 +592,20 @@ const RULES = [
       es:'Los agujeros deben estar conectados por agua (cada agujero debe tocar la misma red de agua conectada).',
     },
     check:g=>{
-      let anyHole=false, anyBad=false, bad=[], info='';
-      allCells.forEach((arr,s)=>{
-        const sg = {cells:arr, rows};
-        const holes = of(sg,'hole');
-        if(!holes.length) return;
-        anyHole = true;
-        const comp=new Map(); let n=0;
-        of(sg,'water').forEach(w=>{
-          if(comp.has(w)) return;
-          comp.set(w,n); const q=[w];
-          while(q.length) nb(sg,q.pop()).forEach(i=>{
-            if(arr[i]==='water' && !comp.has(i)){comp.set(i,n); q.push(i);}
-          });
-          n++;
-        });
-        const touch=h=>new Set(nb(sg,h).filter(i=>comp.has(i)).map(i=>comp.get(i)));
-        let best=-1, bestCount=0;
-        for(let c=0;c<n;c++){
-          const k=holes.filter(h=>touch(h).has(c)).length;
-          if(k>bestCount){bestCount=k; best=c;}
-        }
-        const localBad = holes.filter(h=>best<0 || !touch(h).has(best));
-        if(localBad.length){ anyBad = true; if(s===sphere) bad.push(...localBad); }
-        if(s===sphere) info = `${bestCount}/${holes.length}`;
-      });
+      const net = waterNetworks();
+      const holes = [];
+      allCells.forEach((arr,sp)=>arr.forEach((t,i)=>{ if(t==='hole') holes.push([sp,i]); }));
+      const touch = ([sp,i]) => new Set(net.neighbors(sp,i)
+        .filter(([a,b])=>allCells[a][b]==='water').map(([a,b])=>net.comp.get(net.key(a,b))));
+      let best=-1, bestCount=0;
+      for(let c=0;c<net.sizes.length;c++){
+        const k=holes.filter(h=>touch(h).has(c)).length;
+        if(k>bestCount){bestCount=k; best=c;}
+      }
+      const badHoles = holes.filter(h=>best<0 || !touch(h).has(best));
+      const bad = badHoles.filter(h=>h[0]===sphere).map(h=>h[1]);
+      const anyHole = holes.length>0, anyBad = badHoles.length>0;
+      const info = anyHole ? `${bestCount}/${holes.length}` : '';
       return {ok: anyHole && !anyBad, bad, info};
     } },
 
@@ -886,7 +897,7 @@ function testUnlockAll(){            // tryb testowy: klawisz 0 odblokowuje wszy
     allCells = allCells.map(arr=>arr.concat(Array(rows*W*(FLOORS-1)).fill(null)));
   }
   sphere = 0;
-  loadPreset(allCells[sphere]);
+  loadPreset();
   cells = allCells[sphere];
   floor = 0;
   spheresOn = true;
@@ -894,69 +905,111 @@ function testUnlockAll(){            // tryb testowy: klawisz 0 odblokowuje wszy
   render();
 }
 
-/* Gotowy układ dla klawisza 0 (piętra od najwyższego; w każdym piętrze rzędy 8→1, kolumny A→H).
+/* Gotowy układ dla klawisza 0: PRESET[sfera][piętro][rząd 8→1], kolumny A→H.
    Skróty: h=chatka m=klasztor g=zboże w=woda s=kamień t=stajnia l=studnia
-           f=pochodnia o=dziura b=niebieski ogień u=uniwersytet z=domek maga */
+           f=pochodnia o=dziura b=niebieski ogień u=uniwersytet z=domek maga n=pomnik */
 const PRESET_KEYS = {h:'hut', m:'monastery', g:'grain', w:'water', s:'stone', t:'stable',
-  l:'well', f:'torch', o:'hole', b:'bluefire', u:'university', z:'wizard'};
+  l:'well', f:'torch', o:'hole', b:'bluefire', u:'university', z:'wizard', n:'monument'};
+const E8 = '........';
 const PRESET = [
-  [ // piętro 1 (najwyższe)
-    'o.......',   // 8
-    'www.....',   // 7
-    '..ww....',   // 6
-    'sssw..t.',   // 5
-    's.swwlls',   // 4 (zostaje 8 znaków)
-    'sssgwhgg',   // 3
-    'szshwwwh',   // 2
-    'sss.hg.g',   // 1
+  [ // ===== sfera 1 =====
+    [ // piętro 1 (najwyższe)
+      'o.......',   // 8
+      'www.....',   // 7
+      '..ww....',   // 6
+      'sssw..t.',   // 5
+      's.swwlls',   // 4
+      'sssgwhg.',   // 3
+      'szshwww.',   // 2
+      'sss.hhhg',   // 1  (chatki E, F, G = 00001110 = 14)
+    ],
+    [ // piętro 2
+      'gw......',   // 8
+      'hwww....',   // 7
+      '.ghwb...',   // 6
+      '...www..',   // 5
+      '..ghuww.',   // 4
+      'stsssw..',   // 3
+      '.zsshwz.',   // 2
+      's.......',   // 1
+    ],
+    [ // piętro 3
+      'wwww....',   // 8
+      'ww......',   // 7
+      '........',   // 6
+      '...b....',   // 5
+      '....s...',   // 4
+      '.....z..',   // 3
+      '.z......',   // 2
+      '........',   // 1
+    ],
+    [ // piętro 4
+      '.w......',   // 8
+      '.w......',   // 7
+      '.w......',   // 6
+      '.wb.....',   // 5
+      '....t.l.',   // 4
+      '........',   // 3
+      '.z..f.s.',   // 2
+      '........',   // 1
+    ],
+    [ // piętro 5 (najniższe)
+      '.w..fff.',   // 8
+      '.w...fff',   // 7
+      '.w......',   // 6
+      '.w......',   // 5
+      '.w..s.w.',   // 4
+      '.ww...ww',   // 3
+      '.zw.wbww',   // 2
+      '.wwwwwwn',   // 1  (pomnik: 10. rodzaj bloku na skosie od domku maga)
+    ],
   ],
-  [ // piętro 2
-    'gw......',   // 8
-    'hwww..m.',   // 7
-    '.ghwb...',   // 6
-    '...www..',   // 5
-    '..ghuww.',   // 4
-    'stsssw..',   // 3
-    '.zsshwz.',   // 2
-    's.......',   // 1
+  [ // ===== sfera 2: wioska (5 chatek, 8 zbóż, 2 stajnie; woda dzieli pozycje z sferą 1) =====
+    [
+      '........',   // 8
+      '...t.t..',   // 7
+      '..wwg...',   // 6
+      '...whg..',   // 5
+      '.ghwgg..',   // 4
+      '...hwhg.',   // 3
+      '....wg..',   // 2
+      '...gh...',   // 1
+    ],
+    [E8,E8,E8,E8,E8,E8,E8,E8],
+    [E8,E8,E8,E8,E8,E8,E8,E8],
+    [E8,E8,E8,E8,E8,E8,E8,E8],
+    [E8,E8,E8,E8,E8,E8,E8,'..wwwww.'],
   ],
-  [ // piętro 3
-    'wwww....',   // 8
-    'ww......',   // 7
-    '........',   // 6
-    '...b....',   // 5
-    '....s...',   // 4
-    '.....z..',   // 3
-    '.z......',   // 2
-    '........',   // 1
+  [ // ===== sfera 3: stajnia + klasztor (nie na krawędzi) =====
+    [ 't.t.....',E8,E8,E8,E8,E8,E8,E8],
+    [E8,E8,E8,E8,E8,E8,E8,E8],
+    [E8,E8,E8,'...m....',E8,E8,E8,E8],
+    [E8,E8,E8,E8,E8,E8,E8,E8],
+    [E8,E8,E8,E8,E8,E8,E8,'..wwwww.'],
   ],
-  [ // piętro 4
-    '.w......',   // 8
-    '.w......',   // 7
-    '.w......',   // 6
-    '.wb.....',   // 5
-    '....t.l.',   // 4
-    '........',   // 3
-    '.z..f.s.',   // 2
-    '........',   // 1
+  [ // ===== sfera 4: stajnia + pomniki =====
+    ['.t.nnn..',E8,E8,E8,E8,E8,E8,E8],   // piętro 1: 3 pomniki
+    ['..nnnn..',E8,E8,E8,E8,E8,E8,E8],   // piętro 2: 4 pomniki
+    [E8,E8,E8,E8,E8,E8,E8,E8],            // piętro 3: bez pomnika
+    ['..n.....',E8,E8,E8,E8,E8,E8,E8],   // piętro 4: 1 pomnik
+    [E8,E8,E8,E8,E8,E8,E8,'..wwwww.'],   // piętro 5: woda łącząca sieć (pomnik stoi w sferze 1)
   ],
-  [ // piętro 5 (najniższe)
-    '.w..fff.',   // 8
-    '.w...fff',   // 7
-    '.w......',   // 6
-    '.w......',   // 5
-    '.w..s.w.',   // 4
-    '.ww...ww',   // 3
-    '.zw.wbww',   // 2
-    '.wwwwwwo',   // 1
+  [ // ===== sfera 5: stajnia + druga dziura (najdalej od pierwszej) =====
+    ['t.......',E8,E8,E8,E8,E8,E8,E8],
+    [E8,E8,E8,E8,E8,E8,E8,E8],
+    [E8,E8,E8,E8,E8,E8,E8,E8],
+    [E8,E8,E8,E8,E8,E8,E8,E8],
+    [E8,E8,E8,E8,E8,E8,E8,'..wwwwwo'],
   ],
 ];
-function loadPreset(arr){
-  arr.fill(null);
-  PRESET.forEach((fl, f)=>{
-    fl.forEach((line, r)=>{
-      [...line].forEach((ch, c)=>{
-        if(PRESET_KEYS[ch]) arr[f*rows*W + r*W + c] = PRESET_KEYS[ch];
+function loadPreset(){
+  PRESET.forEach((floors, sp)=>{
+    const arr = allCells[sp]; arr.fill(null);
+    floors.forEach((fl, f)=>{
+      fl.forEach((line, r)=>{
+        [...line].forEach((ch, c)=>{
+          if(PRESET_KEYS[ch]) arr[f*rows*W + r*W + c] = PRESET_KEYS[ch];
+        });
       });
     });
   });
